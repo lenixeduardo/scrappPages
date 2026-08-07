@@ -13,7 +13,12 @@
     "type": "git",
     "url": "git+https://github.com/lenixeduardo/scrapppages.git"
   },
-  "keywords": ["mcp", "model-context-protocol", "chatgpt", "mockup"],
+  "keywords": [
+    "mcp",
+    "model-context-protocol",
+    "chatgpt",
+    "mockup"
+  ],
   "license": "ISC",
   "bugs": {
     "url": "https://github.com/lenixeduardo/scrapppages/issues"
@@ -24,13 +29,17 @@
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.30.0",
+    "csv-parse": "^7.0.2",
     "dotenv": "^17.4.2",
+    "exceljs": "^4.4.0",
     "express": "^5.2.1",
+    "nodemailer": "^9.0.5",
     "zod": "^4.4.3"
   },
   "devDependencies": {
     "@types/express": "^5.0.6",
     "@types/node": "^26.1.2",
+    "@types/nodemailer": "^8.0.1",
     "tsx": "^4.23.11",
     "typescript": "^7.0.2"
   }

@@ -1,6 +1,10 @@
 # scrappPages
 
-Servidor MCP (Model Context Protocol) remoto, em Node.js + TypeScript, que expõe uma única ferramenta — `generate_mockup_image` — para preparar um prompt pronto de mockup de UI (tela web/mobile) a partir de uma descrição em texto.
+Servidor MCP (Model Context Protocol) remoto, em Node.js + TypeScript, que expõe três ferramentas:
+
+- `generate_mockup_image` — prepara um prompt pronto de mockup de UI (tela web/mobile) a partir de uma descrição em texto.
+- `read_spreadsheet_data` — baixa e lê uma planilha (CSV ou XLSX) a partir de uma URL pública, retornando as linhas como JSON.
+- `send_email` — envia um e-mail via SMTP, com anexos opcionais em base64 (ex: imagens de mockup geradas).
 
 **Sem custo de API de imagem.** O servidor não gera a imagem: ele só monta um prompt bem estruturado e instrui o cliente MCP a gerar a imagem imediatamente usando a própria capacidade de geração de imagem dele (ex: a geração nativa do ChatGPT, coberta pela assinatura). Pensado para ser conectado como um **connector remoto no ChatGPT**, mas fala o protocolo MCP padrão (Streamable HTTP), então funciona com qualquer cliente MCP compatível que tenha geração de imagem própria.
 
@@ -23,6 +27,7 @@ Preencha no `.env`:
 | --- | --- |
 | `MCP_SHARED_SECRET` | Segredo que o cliente MCP deve enviar em todo request. Gere com `openssl rand -hex 32`. |
 | `PORT` / `HOST` | Opcional. Padrão `3000` / `0.0.0.0`. |
+| `SMTP_HOST` / `SMTP_PORT` / `SMTP_SECURE` / `SMTP_USER` / `SMTP_PASS` / `SMTP_FROM` | Opcionais, só necessários para usar a tool `send_email`. Sem eles configurados, a tool responde com erro explicando o que falta — o resto do servidor funciona normalmente. |
 
 ## Rodando localmente
 
@@ -61,7 +66,7 @@ O ChatGPT (via Developer Mode / Connectors) só alcança servidores MCP remotos 
 
 A automação de ponta a ponta (usuário pede → ChatGPT chama a ferramenta → ChatGPT gera a imagem sozinho) depende do modelo seguir a instrução devolvida pela ferramenta. Isso não é garantido pelo protocolo MCP (que só permite cliente→servidor, sem o servidor "acionar" a geração do cliente), mas modelos GPT-4/5-class costumam encadear a chamada de geração de imagem de forma consistente logo após receber o prompt pronto.
 
-## Ferramenta exposta
+## Ferramentas expostas
 
 ### `generate_mockup_image`
 
@@ -73,3 +78,23 @@ A automação de ponta a ponta (usuário pede → ChatGPT chama a ferramenta →
 | `aspectRatio` | `square` \| `landscape` \| `portrait` | não | Proporção sugerida para a imagem (padrão `landscape`). |
 
 Retorna um texto com o prompt final pronto e a instrução para o cliente gerar a imagem imediatamente.
+
+### `read_spreadsheet_data`
+
+| Campo | Tipo | Obrigatório | Descrição |
+| --- | --- | --- | --- |
+| `url` | string | sim | URL pública do arquivo CSV ou XLSX (ex: link de exportação CSV do Google Sheets). |
+| `sheetName` | string | não | Aba a ler em arquivos XLSX com múltiplas abas. Padrão: primeira aba. |
+
+Baixa o arquivo, detecta CSV ou XLSX pela URL/content-type e devolve as linhas (cabeçalho na primeira linha) como JSON, limitado a 500 linhas.
+
+### `send_email`
+
+| Campo | Tipo | Obrigatório | Descrição |
+| --- | --- | --- | --- |
+| `to` | string | sim | Destinatário(s), um e-mail ou vários separados por vírgula. |
+| `subject` | string | sim | Assunto do e-mail. |
+| `text` / `html` | string | ao menos um | Corpo do e-mail. |
+| `attachments` | array | não | Lista de `{ filename, contentBase64, contentType? }`. |
+
+Envia via SMTP usando as credenciais do `.env`. Se `SMTP_*` não estiver configurado, a tool responde com erro em vez de falhar o servidor.

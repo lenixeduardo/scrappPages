@@ -5,6 +5,8 @@ import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/
 
 import { config } from "./config.js";
 import { registerGenerateMockupImageTool } from "./tools/generate-mockup-image.js";
+import { registerReadSpreadsheetTool } from "./tools/read-spreadsheet.js";
+import { registerSendEmailTool } from "./tools/send-email.js";
 
 function buildMcpServer(): McpServer {
   const server = new McpServer({
@@ -13,6 +15,8 @@ function buildMcpServer(): McpServer {
   });
 
   registerGenerateMockupImageTool(server);
+  registerReadSpreadsheetTool(server);
+  registerSendEmailTool(server);
 
   return server;
 }
