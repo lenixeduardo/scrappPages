@@ -12,4 +12,5 @@ export const config = {
   port: Number(process.env.PORT ?? 3000),
   host: process.env.HOST ?? "0.0.0.0",
   mcpSharedSecret: required("MCP_SHARED_SECRET"),
+  googleMapsApiKey: process.env.GOOGLE_MAPS_API_KEY,
 };
