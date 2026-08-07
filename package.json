@@ -1,7 +1,7 @@
 {
   "name": "scrapppages",
   "version": "1.0.0",
-  "description": "Servidor MCP remoto que expõe uma ferramenta de geração de imagens mockup, para ser conectado a clientes MCP como o ChatGPT.",
+  "description": "Servidor MCP remoto que expõe uma ferramenta de preparo de prompt para mockups de UI, para ser conectado a clientes MCP como o ChatGPT (a imagem é gerada pelo próprio cliente, sem custo de API).",
   "type": "module",
   "main": "dist/server.js",
   "scripts": {

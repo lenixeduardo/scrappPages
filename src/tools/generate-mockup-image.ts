@@ -1,20 +1,20 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import * as z from "zod";
 
-import { generateImages } from "../openai-images.js";
-
 const platforms = ["web", "mobile", "desktop", "tablet"] as const;
-const sizes = ["1024x1024", "1536x1024", "1024x1536", "auto"] as const;
+const aspectRatios = ["square", "landscape", "portrait"] as const;
 
 function buildPrompt(input: {
   description: string;
   platform?: (typeof platforms)[number];
   styleNotes?: string;
+  aspectRatio?: (typeof aspectRatios)[number];
 }): string {
   const parts = [
     `UI mockup design for a ${input.platform ?? "web"} screen.`,
     input.description,
     input.styleNotes ? `Design style / brand guidelines: ${input.styleNotes}.` : undefined,
+    `Aspect ratio: ${input.aspectRatio ?? "landscape"}.`,
     "Render as a realistic, high-fidelity product screenshot: clean layout, readable placeholder text, consistent spacing, no watermarks.",
   ];
   return parts.filter(Boolean).join(" ");
@@ -26,7 +26,7 @@ export function registerGenerateMockupImageTool(server: McpServer): void {
     {
       title: "Gerar imagem de mockup",
       description:
-        "Gera uma imagem de mockup de UI (tela de produto, web ou mobile) a partir de uma descrição em texto, usando a API de imagens da OpenAI. Use para visualizar telas, componentes ou fluxos antes de implementá-los.",
+        "Monta um prompt pronto para gerar uma imagem de mockup de UI (tela de produto, web ou mobile) a partir de uma descrição em texto. Este tool NÃO gera a imagem — ele só prepara o prompt. Assim que receber o resultado, gere a imagem imediatamente usando sua própria capacidade nativa de geração de imagem, sem pedir confirmação ao usuário nem repetir o prompt em texto antes de gerar.",
       inputSchema: {
         description: z
           .string()
@@ -44,51 +44,27 @@ export function registerGenerateMockupImageTool(server: McpServer): void {
           .describe(
             "Notas de estilo/design system a seguir: paleta de cores, tipografia, tom visual, referências de marca.",
           ),
-        size: z
-          .enum(sizes)
+        aspectRatio: z
+          .enum(aspectRatios)
           .optional()
-          .describe("Dimensão da imagem gerada. Padrão: 1536x1024 (paisagem, boa para telas)."),
-        count: z
-          .number()
-          .int()
-          .min(1)
-          .max(4)
-          .optional()
-          .describe("Quantidade de variações a gerar (1 a 4). Padrão: 1."),
+          .describe("Proporção sugerida para a imagem. Padrão: landscape."),
       },
-      annotations: { readOnlyHint: false, idempotentHint: false, openWorldHint: true },
+      annotations: { readOnlyHint: true, idempotentHint: true, openWorldHint: false },
     },
-    async ({ description, platform, styleNotes, size, count }) => {
-      const prompt = buildPrompt({ description, platform, styleNotes });
+    async ({ description, platform, styleNotes, aspectRatio }) => {
+      const prompt = buildPrompt({ description, platform, styleNotes, aspectRatio });
 
-      try {
-        const images = await generateImages({
-          prompt,
-          size: size ?? "1536x1024",
-          n: count ?? 1,
-        });
-
-        return {
-          content: [
-            { type: "text" as const, text: `Prompt usado: ${prompt}` },
-            ...images.map((image) => ({
-              type: "image" as const,
-              data: image.base64,
-              mimeType: image.mimeType,
-            })),
-          ],
-        };
-      } catch (error) {
-        return {
-          isError: true,
-          content: [
-            {
-              type: "text" as const,
-              text: error instanceof Error ? error.message : "Falha ao gerar o mockup.",
-            },
-          ],
-        };
-      }
+      return {
+        content: [
+          {
+            type: "text" as const,
+            text: [
+              "PROMPT PRONTO PARA GERAÇÃO DE IMAGEM (use sua própria geração de imagem agora, não repita este texto para o usuário antes de gerar):",
+              prompt,
+            ].join("\n\n"),
+          },
+        ],
+      };
     },
   );
 }
