@@ -40,12 +40,24 @@ npm start
 
 Verifique se subiu com `curl http://localhost:3000/health`.
 
+## Deploy no Render (free tier)
+
+O repo já tem um `render.yaml` (Blueprint) pronto. Passos:
+
+1. No [Render](https://render.com), **New → Blueprint**, conecte este repositório GitHub (`lenixeduardo/scrappPages`).
+2. O Render lê o `render.yaml` sozinho: plano `free`, build `npm install && npm run build`, start `npm start`, health check em `/health`.
+3. Quando pedir o valor de `MCP_SHARED_SECRET` (fica marcado como secreto, não fica no repo), gere um com `openssl rand -hex 32` e cole.
+4. Deploy. Ao terminar, o Render te dá uma URL tipo `https://scrapppages.onrender.com`.
+5. Confirme que subiu: `curl https://scrapppages.onrender.com/health` → `{"status":"ok"}`.
+
+**Sobre o free tier:** o serviço dorme após ~15 min sem receber requisição e leva uns 30-50s pra acordar na próxima chamada — normal e sem custo, só afeta a latência da primeira geração de mockup depois de um tempo parado.
+
 ## Expondo para o ChatGPT
 
-O ChatGPT (via Developer Mode / Connectors) só alcança servidores MCP remotos publicados na internet — não um `localhost`. Faça o deploy do servidor (Railway, Render, Fly.io, um VPS, etc.) e configure o connector com:
+O ChatGPT (via Developer Mode / Connectors) só alcança servidores MCP remotos publicados na internet — não um `localhost`. Depois do deploy, configure o connector com:
 
-- **URL do servidor:** `https://seu-dominio.com/mcp`
-- **Autenticação:** o valor de `MCP_SHARED_SECRET` como Bearer token (o ChatGPT permite configurar um header/token fixo por connector).
+- **URL do servidor:** `https://scrapppages.onrender.com/mcp` (a URL que o Render te deu, com `/mcp` no final).
+- **Autenticação:** o mesmo valor de `MCP_SHARED_SECRET` como Bearer token (o ChatGPT permite configurar um header/token fixo por connector).
 
 A automação de ponta a ponta (usuário pede → ChatGPT chama a ferramenta → ChatGPT gera a imagem sozinho) depende do modelo seguir a instrução devolvida pela ferramenta. Isso não é garantido pelo protocolo MCP (que só permite cliente→servidor, sem o servidor "acionar" a geração do cliente), mas modelos GPT-4/5-class costumam encadear a chamada de geração de imagem de forma consistente logo após receber o prompt pronto.
 

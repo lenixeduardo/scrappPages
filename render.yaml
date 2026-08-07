@@ -1,0 +1,14 @@
+services:
+  - type: web
+    name: scrapppages
+    runtime: node
+    plan: free
+    region: oregon
+    buildCommand: npm install && npm run build
+    startCommand: npm start
+    healthCheckPath: /health
+    envVars:
+      - key: HOST
+        value: 0.0.0.0
+      - key: MCP_SHARED_SECRET
+        sync: false
