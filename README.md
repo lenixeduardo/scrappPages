@@ -26,7 +26,9 @@ Preencha no `.env`:
 | --- | --- |
 | `MCP_SHARED_SECRET` | Segredo que o cliente MCP deve enviar em todo request. Gere com `openssl rand -hex 32`. |
 | `PORT` / `HOST` | Opcional. Padrão `3000` / `0.0.0.0`. |
-| `GOOGLE_MAPS_API_KEY` | Necessária apenas para `scrape_businesses_without_website`. Chave da Google Cloud com **Places API** e **Geocoding API** habilitadas (e billing ativo — o Google exige cartão, mas dá cota gratuita mensal). |
+| `GOOGLE_MAPS_API_KEY` | Necessária apenas para `scrape_businesses_without_website`. Chave da Google Cloud com **Places API (New)** e **Geocoding API** habilitadas (e billing ativo — o Google exige cartão, mas dá cota gratuita mensal). |
+
+> **Atenção:** tem que ser a **Places API (New)**, não a "Places API" legada. O Google congelou a API legada em 1º de março de 2025 e ela não pode mais ser ativada em projetos novos — uma chave criada hoje só funciona com a versão nova.
 
 ## Rodando localmente
 
@@ -69,17 +71,50 @@ A automação de ponta a ponta (usuário pede → ChatGPT chama a ferramenta →
 
 ### `scrape_businesses_without_website`
 
-Usa a [Google Places API](https://developers.google.com/maps/documentation/places/web-service) (Nearby Search + Place Details) e a Geocoding API para localizar comércios físicos próximos a um endereço e filtrar apenas os que **não têm site cadastrado no Google** — úteis como leads para oferecer criação de site.
+Usa a **Places API (New)** (`places:searchText` / `places:searchNearby`) e a Geocoding API para localizar comércios físicos próximos a um endereço e devolver os que **não têm site próprio** — leads para oferecer criação de site.
+
+Um lead entra na lista por um destes três motivos:
+
+| Motivo | O que significa |
+| --- | --- |
+| `sem_site` | Não tem nenhum site cadastrado no Google. |
+| `site_google_desativado` | O "site" é um `business.site`/`negocio.site`, o construtor grátis que o Google **desativou em 2024**. O link está morto e o dono já demonstrou que queria um site. |
+| `so_rede_social` | O "site" é só Instagram, Facebook, Linktree, WhatsApp, iFood etc. |
+
+Parâmetros:
 
 | Campo | Tipo | Obrigatório | Descrição |
 | --- | --- | --- | --- |
 | `location` | string | não | Endereço/região de referência. Padrão: `Avenida Paulista, São Paulo, Brasil`. |
-| `radiusMeters` | number | não | Raio de busca em metros (máx. 5000). Padrão `1500`. |
-| `type` | string | não | Tipo de estabelecimento do Google Places (ex: `restaurant`, `store`, `beauty_salon`). |
-| `keyword` | string | não | Palavra-chave adicional (ex: `padaria`, `pet shop`). |
-| `maxResults` | number | não | Máximo de estabelecimentos analisados (máx. 60). Padrão `20`. |
+| `radiusMeters` | number | não | Raio de busca em metros (máx. 50000). Padrão `2000`. |
+| `type` | string | não | Tipo do Google Places (ex: `restaurant`, `store`, `beauty_salon`). |
+| `keyword` | string | não | Palavra-chave livre (ex: `padaria`, `pet shop`). Se omitida, varre automaticamente ~12 categorias de comércio de bairro. |
+| `targetLeads` | number | não | **Quantos leads retornar** (máx. 60). Padrão `10`. A busca continua até atingir esse número. |
+| `maxPlacesScanned` | number | não | Teto de estabelecimentos analisados, para limitar custo de API (máx. 400). Padrão `120`. |
+| `includeSocialOnly` | boolean | não | Incluir quem só tem rede social como site. Padrão `true`. |
+| `requirePhone` | boolean | não | Retornar só leads com telefone público. Padrão `false`. |
 
-Retorna a lista de comércios sem site, com nome, endereço, telefone, avaliação e link do Google Maps. Requer `GOOGLE_MAPS_API_KEY` configurada (ver seção de Configuração acima).
+Retorna texto formatado **e** `structuredContent` com os leads em JSON. Os leads vêm ordenados por "contactabilidade" (tem telefone, quantidade de avaliações, nota), e comércios permanentemente fechados são descartados. Requer `GOOGLE_MAPS_API_KEY` (ver Configuração).
+
+#### Testando pela linha de comando
+
+Dá pra rodar a prospecção sem subir o servidor MCP:
+
+```sh
+npm run prospect -- --location "Avenida Paulista, São Paulo" --leads 10
+npm run prospect -- --keyword "pet shop" --radius 3000 --leads 15 --csv
+npm run prospect -- --location "Centro, Campinas" --leads 10 --json
+```
+
+Flags: `--location`, `--keyword`, `--type`, `--radius`, `--leads`, `--scan`, `--csv`, `--json`.
+
+## Testes
+
+```sh
+npm test
+```
+
+Cobre a classificação de leads (sem site / site do Google morto / só rede social), os filtros de comércio fechado, deduplicação, ranqueamento e a exportação CSV.
 
 ### `generate_mockup_image`
 

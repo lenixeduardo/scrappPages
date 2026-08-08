@@ -12,3 +12,5 @@ services:
         value: 0.0.0.0
       - key: MCP_SHARED_SECRET
         sync: false
+      - key: GOOGLE_MAPS_API_KEY
+        sync: false
