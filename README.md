@@ -1,6 +1,9 @@
 # scrappPages
 
-Servidor MCP (Model Context Protocol) remoto, em Node.js + TypeScript, que expõe uma única ferramenta — `generate_mockup_image` — para preparar um prompt pronto de mockup de UI (tela web/mobile) a partir de uma descrição em texto.
+Servidor MCP (Model Context Protocol) remoto, em Node.js + TypeScript, que expõe duas ferramentas:
+
+- `generate_mockup_image` — prepara um prompt pronto de mockup de UI (tela web/mobile) a partir de uma descrição em texto.
+- `scrape_businesses_without_website` — busca comércios próximos a um endereço (padrão: Avenida Paulista, São Paulo) e retorna os que não têm site cadastrado no Google, como leads para venda de criação de sites.
 
 **Sem custo de API de imagem.** O servidor não gera a imagem: ele só monta um prompt bem estruturado e instrui o cliente MCP a gerar a imagem imediatamente usando a própria capacidade de geração de imagem dele (ex: a geração nativa do ChatGPT, coberta pela assinatura). Pensado para ser conectado como um **connector remoto no ChatGPT**, mas fala o protocolo MCP padrão (Streamable HTTP), então funciona com qualquer cliente MCP compatível que tenha geração de imagem própria.
 
@@ -23,6 +26,7 @@ Preencha no `.env`:
 | --- | --- |
 | `MCP_SHARED_SECRET` | Segredo que o cliente MCP deve enviar em todo request. Gere com `openssl rand -hex 32`. |
 | `PORT` / `HOST` | Opcional. Padrão `3000` / `0.0.0.0`. |
+| `GOOGLE_MAPS_API_KEY` | Necessária apenas para `scrape_businesses_without_website`. Chave da Google Cloud com **Places API** e **Geocoding API** habilitadas (e billing ativo — o Google exige cartão, mas dá cota gratuita mensal). |
 
 ## Rodando localmente
 
@@ -61,7 +65,21 @@ O ChatGPT (via Developer Mode / Connectors) só alcança servidores MCP remotos 
 
 A automação de ponta a ponta (usuário pede → ChatGPT chama a ferramenta → ChatGPT gera a imagem sozinho) depende do modelo seguir a instrução devolvida pela ferramenta. Isso não é garantido pelo protocolo MCP (que só permite cliente→servidor, sem o servidor "acionar" a geração do cliente), mas modelos GPT-4/5-class costumam encadear a chamada de geração de imagem de forma consistente logo após receber o prompt pronto.
 
-## Ferramenta exposta
+## Ferramentas expostas
+
+### `scrape_businesses_without_website`
+
+Usa a [Google Places API](https://developers.google.com/maps/documentation/places/web-service) (Nearby Search + Place Details) e a Geocoding API para localizar comércios físicos próximos a um endereço e filtrar apenas os que **não têm site cadastrado no Google** — úteis como leads para oferecer criação de site.
+
+| Campo | Tipo | Obrigatório | Descrição |
+| --- | --- | --- | --- |
+| `location` | string | não | Endereço/região de referência. Padrão: `Avenida Paulista, São Paulo, Brasil`. |
+| `radiusMeters` | number | não | Raio de busca em metros (máx. 5000). Padrão `1500`. |
+| `type` | string | não | Tipo de estabelecimento do Google Places (ex: `restaurant`, `store`, `beauty_salon`). |
+| `keyword` | string | não | Palavra-chave adicional (ex: `padaria`, `pet shop`). |
+| `maxResults` | number | não | Máximo de estabelecimentos analisados (máx. 60). Padrão `20`. |
+
+Retorna a lista de comércios sem site, com nome, endereço, telefone, avaliação e link do Google Maps. Requer `GOOGLE_MAPS_API_KEY` configurada (ver seção de Configuração acima).
 
 ### `generate_mockup_image`
 
