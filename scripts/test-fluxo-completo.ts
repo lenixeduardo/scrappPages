@@ -18,6 +18,7 @@ import {
   FIXTURE_LOCATION,
 } from "../src/fixtures/places-paulista.js";
 import { buildContactSheetHtml, type SheetItem } from "../src/render/contact-sheet.js";
+import { buildMockupHtml } from "../src/render/mockup-template.js";
 import { RenderSession } from "../src/render/render-png.js";
 import { themeForLead } from "../src/render/theme.js";
 import {
@@ -36,22 +37,28 @@ interface Args {
   real: boolean;
   limit: number;
   outDir: string;
+  htmlDir: string;
   samplesDir: string;
   samples: number;
+  html: boolean;
 }
 
 function parseArgs(argv: string[]): Args {
   const get = (name: string): string | undefined =>
     argv.find((arg) => arg.startsWith(`--${name}=`))?.split("=")[1];
 
+  const outDir = path.resolve(get("out") ?? "out/mockups");
+
   return {
     real: argv.includes("--real"),
     // 24 analisados, porque 4 da fixture têm site e são descartados pelo filtro:
     // o resultado é exatamente 20 leads, com o filtro de fato exercitado.
     limit: Number(get("limit") ?? 24),
-    outDir: path.resolve(get("out") ?? "out/mockups"),
+    outDir,
+    htmlDir: path.resolve(get("html-out") ?? path.join(outDir, "html")),
     samplesDir: path.resolve(get("samples-dir") ?? "docs/exemplos"),
     samples: Number(get("samples") ?? 6),
+    html: !argv.includes("--no-html"),
   };
 }
 
@@ -153,6 +160,7 @@ async function main(): Promise<void> {
   // --- 3. renderização -----------------------------------------------------
   await rm(args.outDir, { recursive: true, force: true });
   await mkdir(args.outDir, { recursive: true });
+  if (args.html) await mkdir(args.htmlDir, { recursive: true });
 
   console.log("\n▸ Gerando mockups (HTML + Chromium local)...");
   const session = await RenderSession.open();
@@ -165,7 +173,8 @@ async function main(): Promise<void> {
     for (const [position, lead] of extraction.leads.entries()) {
       const index = position + 1;
       const theme = themeForLead(lead);
-      const fileName = `${String(index).padStart(2, "0")}-${slugify(lead.name)}-${theme.key}.png`;
+      const baseName = `${String(index).padStart(2, "0")}-${slugify(lead.name)}-${theme.key}`;
+      const fileName = `${baseName}.png`;
       const started = Date.now();
 
       try {
@@ -174,6 +183,13 @@ async function main(): Promise<void> {
           throw new Error(`PNG suspeito de página em branco (${png.length} bytes)`);
         }
         await writeFile(path.join(args.outDir, fileName), png);
+
+        // O HTML que originou o PNG, gravado ao lado dele: é o que se entrega
+        // ao cliente para virar site de verdade, e o que permite auditar de
+        // onde veio cada pixel.
+        if (args.html) {
+          await writeFile(path.join(args.htmlDir, `${baseName}.html`), buildMockupHtml(lead));
+        }
 
         sheetItems.push({
           index,
@@ -215,6 +231,13 @@ async function main(): Promise<void> {
       const sheet = await session.renderHtml(sheetHtml, { fullPage: true });
       await writeFile(path.join(args.outDir, "00-indice.png"), sheet);
       console.log(`  00-indice.png · ${Math.round(sheet.length / 1024)} KB`);
+
+      if (args.html) {
+        await writeFile(path.join(args.htmlDir, "00-indice.html"), sheetHtml);
+        console.log(
+          `  ${sheetItems.length + 1} arquivos .html em ${path.relative(process.cwd(), args.htmlDir)}/`,
+        );
+      }
 
       // --- 5. amostras versionadas ----------------------------------------
       await rm(args.samplesDir, { recursive: true, force: true });

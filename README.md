@@ -62,11 +62,22 @@ npm run fluxo:teste           # dados simulados, não precisa de chave nenhuma
 npm run fluxo:teste:real      # extração real via Google Places API
 ```
 
-Saída: um PNG 1280x800 por lead, mais `00-indice.png`, uma folha de contato com todas as miniaturas numa página só para validar as gerações de uma olhada. No fim, uma tabela com tema escolhido, tamanho e tempo de cada mockup; o script sai com código 1 se algum render falhar ou se vierem menos de 20 leads.
+Saída em `out/mockups/`:
+
+| Arquivo | O que é |
+| --- | --- |
+| `NN-<slug>-<tema>.png` | O mockup renderizado, 1280x800, um por lead. |
+| `html/NN-<slug>-<tema>.html` | O HTML autocontido que originou aquele PNG. |
+| `00-indice.png` | Folha de contato com todas as miniaturas numa página só. |
+| `html/00-indice.html` | O fonte da folha de contato. |
+
+O HTML é o entregável tanto quanto a imagem: é ele que vira o site de verdade quando o lead fecha, e é ele que permite auditar de onde veio cada pixel. Cada arquivo é autocontido — sem webfont, CDN ou imagem externa —, então abre offline em qualquer navegador. Use `--no-html` para pular essa gravação.
+
+No fim, uma tabela com tema escolhido, tamanho e tempo de cada mockup; o script sai com código 1 se algum render falhar ou se vierem menos de 20 leads.
 
 Amostras versionadas ficam em [`docs/exemplos/`](docs/exemplos/).
 
-Flags úteis: `--limit=24` (quantos estabelecimentos analisar), `--out=caminho`, `--samples=6`.
+Flags úteis: `--limit=24` (quantos estabelecimentos analisar), `--out=caminho`, `--html-out=caminho`, `--no-html`, `--samples=6`.
 
 ### Dados simulados
 
