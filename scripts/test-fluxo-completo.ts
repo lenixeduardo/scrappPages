@@ -18,6 +18,7 @@ import {
   FIXTURE_LOCATION,
 } from "../src/fixtures/places-paulista.js";
 import { buildContactSheetHtml, type SheetItem } from "../src/render/contact-sheet.js";
+import { buildLeadImagePrompt, type LeadImagePrompt } from "../src/render/lead-prompt.js";
 import { buildMockupHtml } from "../src/render/mockup-template.js";
 import { RenderSession } from "../src/render/render-png.js";
 import { themeForLead } from "../src/render/theme.js";
@@ -38,9 +39,11 @@ interface Args {
   limit: number;
   outDir: string;
   htmlDir: string;
+  promptsDir: string;
   samplesDir: string;
   samples: number;
   html: boolean;
+  prompts: boolean;
 }
 
 function parseArgs(argv: string[]): Args {
@@ -56,9 +59,11 @@ function parseArgs(argv: string[]): Args {
     limit: Number(get("limit") ?? 24),
     outDir,
     htmlDir: path.resolve(get("html-out") ?? path.join(outDir, "html")),
+    promptsDir: path.resolve(get("prompts-out") ?? path.join(outDir, "prompts")),
     samplesDir: path.resolve(get("samples-dir") ?? "docs/exemplos"),
     samples: Number(get("samples") ?? 6),
     html: !argv.includes("--no-html"),
+    prompts: !argv.includes("--no-prompts"),
   };
 }
 
@@ -161,6 +166,7 @@ async function main(): Promise<void> {
   await rm(args.outDir, { recursive: true, force: true });
   await mkdir(args.outDir, { recursive: true });
   if (args.html) await mkdir(args.htmlDir, { recursive: true });
+  if (args.prompts) await mkdir(args.promptsDir, { recursive: true });
 
   console.log("\n▸ Gerando mockups (HTML + Chromium local)...");
   const session = await RenderSession.open();
@@ -168,6 +174,9 @@ async function main(): Promise<void> {
   const rows: Array<Record<string, string | number>> = [];
   const sheetItems: SheetItem[] = [];
   const failures: Array<{ lead: BusinessLead; error: string }> = [];
+  const promptEntries: Array<
+    LeadImagePrompt & { index: number; lead: BusinessLead; themeLabel: string }
+  > = [];
 
   try {
     for (const [position, lead] of extraction.leads.entries()) {
@@ -189,6 +198,14 @@ async function main(): Promise<void> {
         // onde veio cada pixel.
         if (args.html) {
           await writeFile(path.join(args.htmlDir, `${baseName}.html`), buildMockupHtml(lead));
+        }
+
+        // O prompt orientativo do mesmo mockup, para clientes MCP que geram a
+        // imagem com a capacidade própria em vez de usar o Chromium.
+        if (args.prompts) {
+          const built = buildLeadImagePrompt(lead);
+          promptEntries.push({ index, lead, themeLabel: theme.label, ...built });
+          await writeFile(path.join(args.promptsDir, `${baseName}.txt`), `${built.prompt}\n`);
         }
 
         sheetItems.push({
@@ -239,7 +256,7 @@ async function main(): Promise<void> {
         );
       }
 
-      // --- 5. amostras versionadas ----------------------------------------
+      // --- 5. amostras versionadas ------------------------------------------
       await rm(args.samplesDir, { recursive: true, force: true });
       await mkdir(args.samplesDir, { recursive: true });
       await writeFile(path.join(args.samplesDir, "00-indice.png"), sheet);
@@ -261,6 +278,38 @@ async function main(): Promise<void> {
         copied += 1;
       }
       console.log(`  ${copied} amostras + índice copiados para ${path.relative(process.cwd(), args.samplesDir)}/`);
+    }
+
+    // --- 6. prompts de geração de imagem -------------------------------------
+    if (promptEntries.length > 0) {
+      const doc = [
+        "# Prompts de geração de imagem por lead",
+        "",
+        simulated
+          ? `> ${FIXTURE_DISCLAIMER}`
+          : "> Leads reais extraídos da Google Places API.",
+        "",
+        "Cada prompt abaixo é o que `generate_mockup_image` devolveria para o lead —",
+        "o texto que um cliente MCP com geração de imagem própria (ex: ChatGPT) usa",
+        "para produzir o mockup sem depender do Chromium.",
+        "",
+        ...promptEntries.flatMap((entry) => [
+          `## ${String(entry.index).padStart(2, "0")} · ${entry.lead.name}`,
+          "",
+          `**Tema:** ${entry.themeLabel}`,
+          "",
+          "```text",
+          entry.prompt,
+          "```",
+          "",
+        ]),
+      ].join("\n");
+
+      console.log("\n▸ Montando prompts de geração de imagem...");
+      await writeFile(path.join(args.promptsDir, "00-prompts.md"), doc);
+      console.log(
+        `  ${promptEntries.length} prompts (+ índice) em ${path.relative(process.cwd(), args.promptsDir)}/`,
+      );
     }
   } finally {
     await session.close();

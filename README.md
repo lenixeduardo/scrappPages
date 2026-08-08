@@ -68,16 +68,20 @@ Saída em `out/mockups/`:
 | --- | --- |
 | `NN-<slug>-<tema>.png` | O mockup renderizado, 1280x800, um por lead. |
 | `html/NN-<slug>-<tema>.html` | O HTML autocontido que originou aquele PNG. |
+| `prompts/NN-<slug>-<tema>.txt` | O prompt orientativo de geração de imagem daquele lead. |
+| `prompts/00-prompts.md` | Os 20 prompts num documento só, com tema e nome do lead. |
 | `00-indice.png` | Folha de contato com todas as miniaturas numa página só. |
 | `html/00-indice.html` | O fonte da folha de contato. |
 
 O HTML é o entregável tanto quanto a imagem: é ele que vira o site de verdade quando o lead fecha, e é ele que permite auditar de onde veio cada pixel. Cada arquivo é autocontido — sem webfont, CDN ou imagem externa —, então abre offline em qualquer navegador. Use `--no-html` para pular essa gravação.
 
+Os **prompts** são a rota alternativa de geração: o mesmo mockup descrito em texto, no formato que `generate_mockup_image` devolve, para clientes MCP que preferem gerar a imagem com a capacidade nativa deles em vez de depender do Chromium. Saem do `buildLeadImagePrompt` (`src/render/lead-prompt.ts`), que reaproveita o `buildPrompt` do tool — um só lugar define o formato, então os dois caminhos nunca divergem. Use `--no-prompts` para pular.
+
 No fim, uma tabela com tema escolhido, tamanho e tempo de cada mockup; o script sai com código 1 se algum render falhar ou se vierem menos de 20 leads.
 
 Amostras versionadas ficam em [`docs/exemplos/`](docs/exemplos/).
 
-Flags úteis: `--limit=24` (quantos estabelecimentos analisar), `--out=caminho`, `--html-out=caminho`, `--no-html`, `--samples=6`.
+Flags úteis: `--limit=24` (quantos estabelecimentos analisar), `--out=caminho`, `--html-out=caminho`, `--prompts-out=caminho`, `--no-html`, `--no-prompts`, `--samples=6`.
 
 ### Dados simulados
 
@@ -171,6 +175,7 @@ src/
   render/
     theme.ts                temas por categoria (paleta, copy, ícones)
     mockup-template.ts      HTML autocontido do mockup
+    lead-prompt.ts          lead -> prompt de geração de imagem
     render-png.ts           Chromium via playwright-core
     contact-sheet.ts        folha de contato com todas as miniaturas
   tools/                    os três tools MCP

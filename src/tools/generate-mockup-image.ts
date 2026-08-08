@@ -1,10 +1,22 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import * as z from "zod";
 
-const platforms = ["web", "mobile", "desktop", "tablet"] as const;
-const aspectRatios = ["square", "landscape", "portrait"] as const;
+export const platforms = ["web", "mobile", "desktop", "tablet"] as const;
+export const aspectRatios = ["square", "landscape", "portrait"] as const;
 
-function buildPrompt(input: {
+export interface PromptInput {
+  description: string;
+  platform?: (typeof platforms)[number];
+  styleNotes?: string;
+  aspectRatio?: (typeof aspectRatios)[number];
+}
+
+/**
+ * Monta o prompt final de geração de imagem. Exportada para que o prompt
+ * derivado de um lead saia exatamente igual ao deste tool — um só lugar
+ * define o formato.
+ */
+export function buildPrompt(input: {
   description: string;
   platform?: (typeof platforms)[number];
   styleNotes?: string;
