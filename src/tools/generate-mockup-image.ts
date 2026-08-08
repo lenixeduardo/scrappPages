@@ -1,5 +1,12 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import * as z from "zod";
+import {
+  type Business,
+  brandDesignRules,
+  businessDossier,
+  businessSchema,
+  discoveryBrief,
+} from "./brand-discovery.js";
 
 const platforms = ["web", "mobile", "desktop", "tablet", "responsive"] as const;
 const aspectRatios = ["square", "landscape", "portrait"] as const;
@@ -55,18 +62,26 @@ function buildPrompt(input: {
   styleNotes?: string;
   aspectRatio?: (typeof aspectRatios)[number];
   views?: (typeof viewModes)[number];
+  business?: Business;
 }): string {
   const platform = input.platform ?? "web";
   const views = input.views ?? "auto";
   const twoViews = shouldRenderTwoViews(platform, views);
   const aspectRatio = input.aspectRatio ?? "landscape";
+  const { business } = input;
 
   const blocks = [
-    twoViews
-      ? "HIGH-FIDELITY RESPONSIVE WEBSITE MOCKUP — mobile view first (left) and desktop view second (right), in one image."
-      : `HIGH-FIDELITY UI MOCKUP — ${platform} screen.`,
+    business
+      ? `HIGH-FIDELITY RESPONSIVE WEBSITE PROPOSAL FOR A REAL LOCAL BUSINESS — ${business.name}. It must feel specifically designed for this business, never a generic template with the company name inserted afterward.${twoViews ? " Mobile view first (left) and desktop view second (right), in one image." : ""}`
+      : twoViews
+        ? "HIGH-FIDELITY RESPONSIVE WEBSITE MOCKUP — mobile view first (left) and desktop view second (right), in one image."
+        : `HIGH-FIDELITY UI MOCKUP — ${platform} screen.`,
     `BRIEF\n${input.description}`,
-    `DESIGN SYSTEM / STYLE\n${input.styleNotes ?? DEFAULT_STYLE}`,
+    business ? businessDossier(business) : undefined,
+    business ? brandDesignRules(business) : undefined,
+    business
+      ? `DESIGN SYSTEM / STYLE (secondary guidance — the authentic brand wins any conflict)\n${input.styleNotes ?? DEFAULT_STYLE}`
+      : `DESIGN SYSTEM / STYLE\n${input.styleNotes ?? DEFAULT_STYLE}`,
     twoViews ? RESPONSIVE_RULES : undefined,
     SECTION_FLOW_RULES,
     platform === "mobile" ? undefined : HERO_RULES,
@@ -87,7 +102,7 @@ export function registerGenerateMockupImageTool(server: McpServer): void {
     {
       title: "Gerar imagem de mockup",
       description:
-        "Monta um prompt pronto para gerar uma imagem de mockup de UI (tela de produto, web ou mobile, ou site responsivo com mobile + desktop lado a lado) a partir de uma descrição em texto. O prompt já vem com as regras obrigatórias de layout (fluxo vertical de seções full-width, estrutura do Hero, ritmo visual). Este tool NÃO gera a imagem — ele só prepara o prompt. Assim que receber o resultado, gere a imagem imediatamente usando sua própria capacidade nativa de geração de imagem, sem pedir confirmação ao usuário nem repetir o prompt em texto antes de gerar.",
+        "Monta um prompt pronto para gerar uma imagem de mockup de UI (tela de produto, web ou mobile, ou site responsivo com mobile + desktop lado a lado) a partir de uma descrição em texto. O prompt já vem com as regras obrigatórias de layout (fluxo vertical de seções full-width, estrutura do Hero, ritmo visual). Quando o campo 'business' é preenchido com os dados de um comércio real, a resposta vem em duas etapas: um roteiro de BRAND DISCOVERY (pesquisar a identidade visual real do negócio na web) e, só depois, o prompt de imagem. Este tool NÃO pesquisa nem gera a imagem — ele prepara o roteiro e o prompt. Ao receber o resultado, execute a etapa 1 e em seguida gere a imagem com sua própria capacidade nativa de geração de imagem, sem pedir confirmação ao usuário nem repetir os textos para o usuário antes de gerar.",
       inputSchema: {
         description: z
           .string()
@@ -117,23 +132,37 @@ export function registerGenerateMockupImageTool(server: McpServer): void {
           .describe(
             "Quantas telas mostrar: 'single' (uma só), 'mobile-and-desktop' (as duas lado a lado) ou 'auto' (padrão: duas telas quando platform = responsive).",
           ),
+        business: businessSchema
+          .optional()
+          .describe(
+            "Dados do comércio real (nome, categoria, endereço, telefone, site, redes, horário, nota). Preencha para ativar a etapa de brand discovery — pesquisa da logo e das cores reais do negócio antes do desenho da interface.",
+          ),
       },
       annotations: { readOnlyHint: true, idempotentHint: true, openWorldHint: false },
     },
-    async ({ description, platform, styleNotes, aspectRatio, views }) => {
-      const prompt = buildPrompt({ description, platform, styleNotes, aspectRatio, views });
+    async ({ description, platform, styleNotes, aspectRatio, views, business }) => {
+      const prompt = buildPrompt({
+        description,
+        platform,
+        styleNotes,
+        aspectRatio,
+        views,
+        business,
+      });
 
-      return {
-        content: [
-          {
-            type: "text" as const,
-            text: [
-              "PROMPT PRONTO PARA GERAÇÃO DE IMAGEM (use sua própria geração de imagem agora, não repita este texto para o usuário antes de gerar):",
-              prompt,
-            ].join("\n\n"),
-          },
-        ],
-      };
+      const text = business
+        ? [
+            discoveryBrief(business),
+            "———",
+            "ETAPA 2 — PROMPT DE GERAÇÃO DE IMAGEM (gere a imagem agora, já com a identidade confirmada na etapa 1; não repita este texto para o usuário antes de gerar):",
+            prompt,
+          ].join("\n\n")
+        : [
+            "PROMPT PRONTO PARA GERAÇÃO DE IMAGEM (use sua própria geração de imagem agora, não repita este texto para o usuário antes de gerar):",
+            prompt,
+          ].join("\n\n");
+
+      return { content: [{ type: "text" as const, text }] };
     },
   );
 }

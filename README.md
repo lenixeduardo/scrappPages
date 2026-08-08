@@ -90,8 +90,30 @@ Retorna a lista de comércios sem site, com nome, endereço, telefone, avaliaç�
 | `styleNotes` | string | não | Paleta, tipografia, tom visual, referências de marca. Se omitido, usa a estética padrão de site de pequeno negócio brasileiro. |
 | `aspectRatio` | `square` \| `landscape` \| `portrait` | não | Proporção sugerida para a imagem (padrão `landscape`). |
 | `views` | `auto` \| `single` \| `mobile-and-desktop` | não | Quantas telas mostrar. Padrão `auto`: duas telas quando `platform = responsive`, uma só nos demais casos. |
+| `business` | objeto | não | Dados do comércio real. Preenchido, ativa a etapa de **brand discovery** antes da camada visual. Campos: `name` (obrigatório dentro do objeto), `category`, `address`, `city`, `phone`, `website`, `socialProfiles` (array de URLs), `openingHours`, `rating`, `reviewCount`. |
 
-Retorna um texto com o prompt final pronto e a instrução para o cliente gerar a imagem imediatamente.
+Sem `business`, retorna só o prompt de imagem. Com `business`, retorna duas etapas: o roteiro de brand discovery e, depois dele, o prompt de imagem já com as regras de marca.
+
+Os campos de `business` casam com a saída de `scrape_businesses_without_website`, então dá para encadear as duas ferramentas: pega o lead, joga no mockup.
+
+#### Etapa 1 — brand discovery
+
+O objetivo é que o mockup pareça desenhado para **aquele** negócio, não um template com o nome da empresa colado por cima. Como o servidor não pesquisa nada, ele devolve o roteiro que o cliente MCP (que tem busca) executa antes de gerar a imagem:
+
+1. **Identificar o negócio real.** Query de busca montada a partir de nome + categoria + cidade/endereço (a categoria é omitida quando já está no nome). Endereço, cidade, telefone e categoria servem para confirmar que os ativos achados são desse negócio — nomes parecidos não podem ser confundidos.
+2. **Achar a logo real**, nesta ordem de fonte: site oficial → Google Business/Maps → Instagram → Facebook → outros perfis oficiais. Proíbe logo de empresa não relacionada, logo genérico de banco de imagens, ativo com marca d'água e aproximação gerada por IA quando a logo real existe.
+3. **Classificar a confiança** em ALTA / MÉDIA / BAIXA. Só ALTA ou MÉDIA valem como ativo autêntico.
+4. **Fallback tipográfico** com as iniciais (`Barbearia Dom Aristides → BD`) quando a confiança é BAIXA — contido e neutro, para não apresentar logo inventada como se fosse a real.
+5. **Preservar a logo encontrada**: nada de redesenhar, trocar símbolo, refazer tipografia ou adicionar enfeite. Se faltar contraste, usa-se um container neutro em vez de alterar a logo.
+6. **Extrair a linguagem de marca** (primária, secundária, destaque, neutros, geometria, tipografia, personalidade). A identidade real é o input primário; `styleNotes` é orientação secundária e perde em caso de conflito — não force preto/dourado se a empresa usa azul/branco.
+
+#### Etapa 2 — camada visual
+
+O prompt de imagem recebe, além das regras de layout, um bloco de marca: aplicar a logo confirmada na navegação, expandir a identidade num design system web (neutros, superfícies, bordas, hover, acentos de UI) mantendo continuidade reconhecível, e combinar identidade + categoria (`BRAND IDENTITY + BUSINESS CATEGORY = FINAL VISUAL DIRECTION`). Categorias conhecidas — barbearia, padaria/cafeteria, pet shop, salão/estética, restaurante, lavanderia — trazem uma direção de tom pronta, sem apagar a identidade existente.
+
+Os dados reais do dossiê alimentam header, hero, contato e rodapé, com uma regra explícita de honestidade: **nunca inventar informação de mundo real** que não foi fornecida nem confirmada — se não dá para confirmar, omite ou usa placeholder claramente neutro.
+
+Retorna um texto com o roteiro e/ou o prompt final pronto, mais a instrução para o cliente executar a pesquisa e gerar a imagem imediatamente.
 
 #### Regras obrigatórias embutidas no prompt
 
