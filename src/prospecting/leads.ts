@@ -158,10 +158,6 @@ const REASON_LABELS: Record<LeadReason, string> = {
   so_rede_social: "só rede social/marketplace",
 };
 
-export function reasonLabel(reason: LeadReason): string {
-  return REASON_LABELS[reason];
-}
-
 export function formatLead(lead: Lead, index: number): string {
   const lines = [`${index}. ${lead.name}  —  ${REASON_LABELS[lead.reason]}`];
   if (lead.category) lines.push(`   Categoria: ${lead.category}`);

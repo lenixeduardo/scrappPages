@@ -94,8 +94,6 @@ const SOCIAL_TAGS = [
   "instagram",
 ];
 
-const ADDRESS_TAGS = ["addr:street", "addr:housenumber", "addr:suburb", "addr:city"];
-
 function toAddress(tags: Record<string, string>): string | undefined {
   const street = [tags["addr:street"], tags["addr:housenumber"]].filter(Boolean).join(", ");
   const rest = [tags["addr:suburb"], tags["addr:city"]].filter(Boolean).join(" - ");
@@ -178,4 +176,4 @@ export async function searchBusinesses(input: {
   throw new OsmError(`Nenhum servidor Overpass respondeu. Tentativas:\n${failures.join("\n")}`);
 }
 
-export { ADDRESS_TAGS, buildQuery };
+export { buildQuery };

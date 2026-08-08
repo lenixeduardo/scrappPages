@@ -33,7 +33,6 @@ export function mapPlaceToBusiness(place: PlaceRecord): Business {
 
 const GEOCODE_URL = "https://maps.googleapis.com/maps/api/geocode/json";
 const SEARCH_TEXT_URL = "https://places.googleapis.com/v1/places:searchText";
-const SEARCH_NEARBY_URL = "https://places.googleapis.com/v1/places:searchNearby";
 
 export const PLACE_FIELDS = [
   "places.id",
@@ -172,32 +171,4 @@ export async function searchText(input: TextSearchInput): Promise<SearchOutcome>
   } while (pageToken && collected.length < input.maxPlaces);
 
   return { places: collected.slice(0, input.maxPlaces), apiCalls };
-}
-
-export interface NearbySearchInput {
-  lat: number;
-  lng: number;
-  radiusMeters: number;
-  includedTypes?: string[];
-  maxPlaces: number;
-  apiKey: string;
-}
-
-/** Nearby Search (New). Caps at 20 results and has no pagination. */
-export async function searchNearby(input: NearbySearchInput): Promise<SearchOutcome> {
-  const body: Record<string, unknown> = {
-    maxResultCount: Math.min(MAX_PAGE_SIZE, input.maxPlaces),
-    languageCode: "pt-BR",
-    regionCode: "BR",
-    locationRestriction: {
-      circle: {
-        center: { latitude: input.lat, longitude: input.lng },
-        radius: input.radiusMeters,
-      },
-    },
-  };
-  if (input.includedTypes?.length) body.includedTypes = input.includedTypes;
-
-  const data = await postPlaces(SEARCH_NEARBY_URL, body, input.apiKey);
-  return { places: data.places ?? [], apiCalls: 1 };
 }
