@@ -77,6 +77,19 @@ describe("mapElementToBusiness", () => {
     assert.equal(selectLeads([mapped!])[0]?.reason, "so_rede_social");
   });
 
+  it("treats contact:whatsapp as a phone, not as a stand-in website", () => {
+    const mapped = mapElementToBusiness({
+      type: "node",
+      id: 11,
+      lat: 1,
+      lon: 2,
+      tags: { name: "Lanchonete", "amenity": "fast_food", "contact:whatsapp": "+5511999990000" },
+    });
+    assert.equal(mapped?.phone, "+5511999990000");
+    assert.equal(mapped?.socialUrls, undefined);
+    assert.equal(selectLeads([mapped!])[0]?.reason, "sem_site");
+  });
+
   it("marks disused shops as permanently closed", () => {
     const mapped = mapElementToBusiness({
       type: "node",

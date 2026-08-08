@@ -84,10 +84,10 @@ function buildQuery(lat: number, lng: number, radiusMeters: number, keyword?: st
   return `[out:json][timeout:60];\n(\n  ${selectors}\n);\nout center tags;`;
 }
 
+/** WhatsApp is deliberately absent: it is a phone channel, not a stand-in website. */
 const SOCIAL_TAGS = [
   "contact:facebook",
   "contact:instagram",
-  "contact:whatsapp",
   "contact:tiktok",
   "contact:youtube",
   "facebook",
