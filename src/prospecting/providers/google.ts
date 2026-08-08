@@ -1,4 +1,35 @@
-import type { PlaceRecord } from "./leads.js";
+import type { Business } from "../leads.js";
+
+export interface PlaceRecord {
+  id: string;
+  displayName?: { text?: string };
+  formattedAddress?: string;
+  nationalPhoneNumber?: string;
+  internationalPhoneNumber?: string;
+  websiteUri?: string;
+  rating?: number;
+  userRatingCount?: number;
+  businessStatus?: string;
+  googleMapsUri?: string;
+  primaryTypeDisplayName?: { text?: string };
+  primaryType?: string;
+}
+
+export function mapPlaceToBusiness(place: PlaceRecord): Business {
+  return {
+    id: place.id,
+    name: place.displayName?.text ?? "",
+    address: place.formattedAddress,
+    phone: place.nationalPhoneNumber ?? place.internationalPhoneNumber,
+    website: place.websiteUri,
+    rating: place.rating,
+    reviews: place.userRatingCount,
+    category: place.primaryTypeDisplayName?.text ?? place.primaryType?.replace(/_/g, " "),
+    mapUri: place.googleMapsUri,
+    permanentlyClosed: place.businessStatus === "CLOSED_PERMANENTLY",
+    temporarilyClosed: place.businessStatus === "CLOSED_TEMPORARILY",
+  };
+}
 
 const GEOCODE_URL = "https://maps.googleapis.com/maps/api/geocode/json";
 const SEARCH_TEXT_URL = "https://places.googleapis.com/v1/places:searchText";
@@ -101,12 +132,20 @@ export interface TextSearchInput {
   radiusMeters: number;
   maxPlaces: number;
   apiKey: string;
+  /** Called after each page; return false to stop paginating and save billable calls. */
+  onPage?: (places: PlaceRecord[]) => boolean;
 }
 
-/** Text Search (New), following nextPageToken until maxPlaces is reached. */
-export async function searchText(input: TextSearchInput): Promise<PlaceRecord[]> {
+export interface SearchOutcome {
+  places: PlaceRecord[];
+  apiCalls: number;
+}
+
+/** Text Search (New), following nextPageToken until maxPlaces or onPage says stop. */
+export async function searchText(input: TextSearchInput): Promise<SearchOutcome> {
   const collected: PlaceRecord[] = [];
   let pageToken: string | undefined;
+  let apiCalls = 0;
 
   do {
     const body: Record<string, unknown> = {
@@ -124,11 +163,15 @@ export async function searchText(input: TextSearchInput): Promise<PlaceRecord[]>
     if (pageToken) body.pageToken = pageToken;
 
     const data = await postPlaces(SEARCH_TEXT_URL, body, input.apiKey);
-    collected.push(...(data.places ?? []));
+    apiCalls += 1;
+    const page = data.places ?? [];
+    collected.push(...page);
     pageToken = data.nextPageToken;
+
+    if (input.onPage && !input.onPage(page)) break;
   } while (pageToken && collected.length < input.maxPlaces);
 
-  return collected.slice(0, input.maxPlaces);
+  return { places: collected.slice(0, input.maxPlaces), apiCalls };
 }
 
 export interface NearbySearchInput {
@@ -141,7 +184,7 @@ export interface NearbySearchInput {
 }
 
 /** Nearby Search (New). Caps at 20 results and has no pagination. */
-export async function searchNearby(input: NearbySearchInput): Promise<PlaceRecord[]> {
+export async function searchNearby(input: NearbySearchInput): Promise<SearchOutcome> {
   const body: Record<string, unknown> = {
     maxResultCount: Math.min(MAX_PAGE_SIZE, input.maxPlaces),
     languageCode: "pt-BR",
@@ -156,5 +199,5 @@ export async function searchNearby(input: NearbySearchInput): Promise<PlaceRecor
   if (input.includedTypes?.length) body.includedTypes = input.includedTypes;
 
   const data = await postPlaces(SEARCH_NEARBY_URL, body, input.apiKey);
-  return data.places ?? [];
+  return { places: data.places ?? [], apiCalls: 1 };
 }

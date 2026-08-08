@@ -12,15 +12,16 @@ const { values } = parseArgs({
     radius: { type: "string" },
     leads: { type: "string" },
     scan: { type: "string" },
+    provider: { type: "string" },
     csv: { type: "boolean" },
     json: { type: "boolean" },
   },
 });
 
-if (!config.googleMapsApiKey) {
-  console.error(
-    "GOOGLE_MAPS_API_KEY não configurada. Defina no .env ou no ambiente antes de rodar a prospecção.",
-  );
+const provider = values.provider === "google" ? "google" : "osm";
+
+if (provider === "google" && !config.googleMapsApiKey) {
+  console.error("provider=google exige GOOGLE_MAPS_API_KEY no .env. Rode sem --provider para usar o OSM, grátis.");
   process.exit(1);
 }
 
@@ -32,6 +33,7 @@ const result = await prospect(
     radiusMeters: values.radius ? Number(values.radius) : undefined,
     targetLeads: values.leads ? Number(values.leads) : undefined,
     maxPlacesScanned: values.scan ? Number(values.scan) : undefined,
+    provider,
   },
   config.googleMapsApiKey,
 );
@@ -44,7 +46,9 @@ if (values.json) {
   console.log(
     `${result.leads.length} lead(s) em torno de "${result.origin.formattedAddress}" (raio ${result.radiusMeters}m).`,
   );
-  console.log(`Analisados: ${result.scanned} | Categorias: ${result.queriesUsed.join(", ")}\n`);
+  console.log(
+    `Fonte: ${result.source} | Analisados: ${result.scanned} | Chamadas cobradas: ${result.billableCalls}\n`,
+  );
   console.log(result.leads.map((lead, index) => formatLead(lead, index + 1)).join("\n\n"));
   if (!result.reachedTarget) {
     console.log(`\nMeta de ${result.targetLeads} leads não atingida — aumente --radius ou --scan.`);

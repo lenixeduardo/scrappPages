@@ -1,30 +1,31 @@
-export interface PlaceRecord {
+/** Provider-neutral business record. Both OSM and Google providers map into this. */
+export interface Business {
   id: string;
-  displayName?: { text?: string };
-  formattedAddress?: string;
-  nationalPhoneNumber?: string;
-  internationalPhoneNumber?: string;
-  websiteUri?: string;
+  name: string;
+  address?: string;
+  phone?: string;
+  website?: string;
+  /** Social/marketplace profiles declared separately from a website. */
+  socialUrls?: string[];
   rating?: number;
-  userRatingCount?: number;
-  businessStatus?: string;
-  googleMapsUri?: string;
-  primaryTypeDisplayName?: { text?: string };
-  primaryType?: string;
-  types?: string[];
+  reviews?: number;
+  category?: string;
+  mapUri?: string;
+  permanentlyClosed?: boolean;
+  temporarilyClosed?: boolean;
 }
 
 export type LeadReason = "sem_site" | "site_google_desativado" | "so_rede_social";
 
 export interface Lead {
-  placeId: string;
+  id: string;
   name: string;
   address?: string;
   phone?: string;
   rating?: number;
   reviews?: number;
   category?: string;
-  googleMapsUri?: string;
+  mapUri?: string;
   reason: LeadReason;
   currentUrl?: string;
   score: number;
@@ -61,8 +62,10 @@ const SOCIAL_ONLY_HOSTS = [
 ];
 
 function hostOf(url: string): string | undefined {
+  const candidate = /^https?:\/\//i.test(url) ? url : `https://${url}`;
   try {
-    return new URL(url).hostname.replace(/^www\./, "").toLowerCase();
+    const host = new URL(candidate).hostname.replace(/^www\./, "").toLowerCase();
+    return host.includes(".") ? host : undefined;
   } catch {
     return undefined;
   }
@@ -72,11 +75,13 @@ function hostMatches(host: string, candidates: string[]): boolean {
   return candidates.some((candidate) => host === candidate || host.endsWith(`.${candidate}`));
 }
 
-/** Returns why this place is a lead, or undefined when it already has a real website. */
-export function classifyLead(place: PlaceRecord): LeadReason | undefined {
-  if (!place.websiteUri) return "sem_site";
+/** Returns why this business is a lead, or undefined when it already has a real website. */
+export function classifyLead(business: Business): LeadReason | undefined {
+  if (!business.website) {
+    return business.socialUrls?.length ? "so_rede_social" : "sem_site";
+  }
 
-  const host = hostOf(place.websiteUri);
+  const host = hostOf(business.website);
   if (!host) return "sem_site";
   if (hostMatches(host, DEAD_GOOGLE_SITE_HOSTS)) return "site_google_desativado";
   if (hostMatches(host, SOCIAL_ONLY_HOSTS)) return "so_rede_social";
@@ -88,29 +93,30 @@ export function classifyLead(place: PlaceRecord): LeadReason | undefined {
  * Ranks how worth contacting a lead is: reachable by phone and with a real
  * review history means an active business that can actually be sold to.
  */
-export function scoreLead(place: PlaceRecord, reason: LeadReason): number {
+export function scoreLead(business: Business, reason: LeadReason): number {
   let score = 0;
-  if (place.nationalPhoneNumber ?? place.internationalPhoneNumber) score += 50;
+  if (business.phone) score += 50;
   if (reason === "site_google_desativado") score += 15;
-  score += Math.min(place.userRatingCount ?? 0, 300) / 10;
-  if (place.rating !== undefined) score += place.rating * 2;
-  if (place.formattedAddress) score += 5;
+  if (reason === "so_rede_social") score += 10;
+  score += Math.min(business.reviews ?? 0, 300) / 10;
+  if (business.rating !== undefined) score += business.rating * 2;
+  if (business.address) score += 5;
   return Math.round(score * 10) / 10;
 }
 
-export function toLead(place: PlaceRecord, reason: LeadReason): Lead {
+export function toLead(business: Business, reason: LeadReason): Lead {
   return {
-    placeId: place.id,
-    name: place.displayName?.text ?? "(sem nome)",
-    address: place.formattedAddress,
-    phone: place.nationalPhoneNumber ?? place.internationalPhoneNumber,
-    rating: place.rating,
-    reviews: place.userRatingCount,
-    category: place.primaryTypeDisplayName?.text ?? place.primaryType,
-    googleMapsUri: place.googleMapsUri,
+    id: business.id,
+    name: business.name,
+    address: business.address,
+    phone: business.phone,
+    rating: business.rating,
+    reviews: business.reviews,
+    category: business.category,
+    mapUri: business.mapUri,
     reason,
-    currentUrl: reason === "sem_site" ? undefined : place.websiteUri,
-    score: scoreLead(place, reason),
+    currentUrl: business.website ?? business.socialUrls?.[0],
+    score: scoreLead(business, reason),
   };
 }
 
@@ -120,26 +126,27 @@ export interface SelectOptions {
   includeClosedTemporarily?: boolean;
 }
 
-/** Filters a raw place batch down to ranked, deduped leads. */
-export function selectLeads(places: PlaceRecord[], options: SelectOptions = {}): Lead[] {
+/** Filters a raw business batch down to ranked, deduped leads. */
+export function selectLeads(businesses: Business[], options: SelectOptions = {}): Lead[] {
   const { includeSocialOnly = true, requirePhone = false, includeClosedTemporarily = false } = options;
 
   const seen = new Set<string>();
   const leads: Lead[] = [];
 
-  for (const place of places) {
-    if (!place.id || seen.has(place.id)) continue;
-    seen.add(place.id);
+  for (const business of businesses) {
+    if (!business.id || seen.has(business.id)) continue;
+    seen.add(business.id);
 
-    if (place.businessStatus === "CLOSED_PERMANENTLY") continue;
-    if (!includeClosedTemporarily && place.businessStatus === "CLOSED_TEMPORARILY") continue;
+    if (!business.name) continue;
+    if (business.permanentlyClosed) continue;
+    if (!includeClosedTemporarily && business.temporarilyClosed) continue;
 
-    const reason = classifyLead(place);
+    const reason = classifyLead(business);
     if (!reason) continue;
     if (!includeSocialOnly && reason === "so_rede_social") continue;
-    if (requirePhone && !(place.nationalPhoneNumber ?? place.internationalPhoneNumber)) continue;
+    if (requirePhone && !business.phone) continue;
 
-    leads.push(toLead(place, reason));
+    leads.push(toLead(business, reason));
   }
 
   return leads.sort((a, b) => b.score - a.score);
@@ -151,6 +158,10 @@ const REASON_LABELS: Record<LeadReason, string> = {
   so_rede_social: "só rede social/marketplace",
 };
 
+export function reasonLabel(reason: LeadReason): string {
+  return REASON_LABELS[reason];
+}
+
 export function formatLead(lead: Lead, index: number): string {
   const lines = [`${index}. ${lead.name}  —  ${REASON_LABELS[lead.reason]}`];
   if (lead.category) lines.push(`   Categoria: ${lead.category}`);
@@ -160,7 +171,7 @@ export function formatLead(lead: Lead, index: number): string {
     lines.push(`   Avaliação: ${lead.rating} (${lead.reviews ?? 0} avaliações)`);
   }
   if (lead.currentUrl) lines.push(`   Link atual: ${lead.currentUrl}`);
-  if (lead.googleMapsUri) lines.push(`   Google Maps: ${lead.googleMapsUri}`);
+  if (lead.mapUri) lines.push(`   Mapa: ${lead.mapUri}`);
   return lines.join("\n");
 }
 
@@ -171,7 +182,7 @@ export function toCsv(leads: Lead[]): string {
     return /[",\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
   };
 
-  const header = "nome,motivo,telefone,endereco,categoria,avaliacao,avaliacoes,link_atual,google_maps";
+  const header = "nome,motivo,telefone,endereco,categoria,avaliacao,avaliacoes,link_atual,mapa";
   const rows = leads.map((lead) =>
     [
       lead.name,
@@ -182,7 +193,7 @@ export function toCsv(leads: Lead[]): string {
       lead.rating,
       lead.reviews,
       lead.currentUrl,
-      lead.googleMapsUri,
+      lead.mapUri,
     ]
       .map(escape)
       .join(","),

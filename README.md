@@ -3,7 +3,7 @@
 Servidor MCP (Model Context Protocol) remoto, em Node.js + TypeScript, que expõe duas ferramentas:
 
 - `generate_mockup_image` — prepara um prompt pronto de mockup de UI (tela web/mobile) a partir de uma descrição em texto.
-- `scrape_businesses_without_website` — busca comércios próximos a um endereço (padrão: Avenida Paulista, São Paulo) e retorna os que não têm site cadastrado no Google, como leads para venda de criação de sites.
+- `scrape_businesses_without_website` — busca comércios próximos a um endereço (padrão: Avenida Paulista, São Paulo) e retorna os que **não têm site próprio**, como leads para venda de criação de sites. Usa OpenStreetMap: **gratuito, sem chave de API e sem cartão de crédito**.
 
 **Sem custo de API de imagem.** O servidor não gera a imagem: ele só monta um prompt bem estruturado e instrui o cliente MCP a gerar a imagem imediatamente usando a própria capacidade de geração de imagem dele (ex: a geração nativa do ChatGPT, coberta pela assinatura). Pensado para ser conectado como um **connector remoto no ChatGPT**, mas fala o protocolo MCP padrão (Streamable HTTP), então funciona com qualquer cliente MCP compatível que tenha geração de imagem própria.
 
@@ -26,9 +26,9 @@ Preencha no `.env`:
 | --- | --- |
 | `MCP_SHARED_SECRET` | Segredo que o cliente MCP deve enviar em todo request. Gere com `openssl rand -hex 32`. |
 | `PORT` / `HOST` | Opcional. Padrão `3000` / `0.0.0.0`. |
-| `GOOGLE_MAPS_API_KEY` | Necessária apenas para `scrape_businesses_without_website`. Chave da Google Cloud com **Places API (New)** e **Geocoding API** habilitadas (e billing ativo — o Google exige cartão, mas dá cota gratuita mensal). |
+| `GOOGLE_MAPS_API_KEY` | **Opcional.** Só é usada se você pedir `provider: "google"` explicitamente, que é **pago**. A busca padrão (OpenStreetMap) não precisa de chave nenhuma. |
 
-> **Atenção:** tem que ser a **Places API (New)**, não a "Places API" legada. O Google congelou a API legada em 1º de março de 2025 e ela não pode mais ser ativada em projetos novos — uma chave criada hoje só funciona com a versão nova.
+> A ferramenta de prospecção funciona **sem configurar nada além do `MCP_SHARED_SECRET`**.
 
 ## Rodando localmente
 
@@ -71,15 +71,24 @@ A automação de ponta a ponta (usuário pede → ChatGPT chama a ferramenta →
 
 ### `scrape_businesses_without_website`
 
-Usa a **Places API (New)** (`places:searchText` / `places:searchNearby`) e a Geocoding API para localizar comércios físicos próximos a um endereço e devolver os que **não têm site próprio** — leads para oferecer criação de site.
+Localiza comércios físicos próximos a um endereço e devolve os que **não têm site próprio** — leads para oferecer criação de site.
 
 Um lead entra na lista por um destes três motivos:
 
 | Motivo | O que significa |
 | --- | --- |
-| `sem_site` | Não tem nenhum site cadastrado no Google. |
+| `sem_site` | Não tem nenhum site cadastrado. |
 | `site_google_desativado` | O "site" é um `business.site`/`negocio.site`, o construtor grátis que o Google **desativou em 2024**. O link está morto e o dono já demonstrou que queria um site. |
 | `so_rede_social` | O "site" é só Instagram, Facebook, Linktree, WhatsApp, iFood etc. |
+
+#### Fontes de dados
+
+| Provider | Custo | Chave | Observação |
+| --- | --- | --- | --- |
+| `osm` (**padrão**) | **R$ 0,00** | nenhuma | OpenStreetMap via Nominatim + Overpass. Uma única consulta traz todos os comércios do raio. Se um servidor Overpass estiver ocupado, a ferramenta tenta os espelhos seguintes automaticamente. |
+| `google` | **pago** | `GOOGLE_MAPS_API_KEY` | Places API (New). Cobertura melhor, mas os campos que a ferramenta precisa (site e telefone) só existem no tier **Enterprise**: US$ 35/1.000 chamadas, com apenas 1.000 chamadas grátis por mês. Só use se souber que quer pagar. |
+
+O campo `billableCalls` no retorno mostra quantas chamadas cobradas foram feitas — com o provider padrão ele é sempre `0`.
 
 Parâmetros:
 
@@ -87,26 +96,28 @@ Parâmetros:
 | --- | --- | --- | --- |
 | `location` | string | não | Endereço/região de referência. Padrão: `Avenida Paulista, São Paulo, Brasil`. |
 | `radiusMeters` | number | não | Raio de busca em metros (máx. 50000). Padrão `2000`. |
-| `type` | string | não | Tipo do Google Places (ex: `restaurant`, `store`, `beauty_salon`). |
-| `keyword` | string | não | Palavra-chave livre (ex: `padaria`, `pet shop`). Se omitida, varre automaticamente ~12 categorias de comércio de bairro. |
-| `targetLeads` | number | não | **Quantos leads retornar** (máx. 60). Padrão `10`. A busca continua até atingir esse número. |
-| `maxPlacesScanned` | number | não | Teto de estabelecimentos analisados, para limitar custo de API (máx. 400). Padrão `120`. |
+| `keyword` | string | não | Filtra pelo nome do estabelecimento (ex: `padaria`). Se omitido, traz todo tipo de comércio. |
+| `targetLeads` | number | não | **Quantos leads retornar** (máx. 200). Padrão `10`. |
+| `maxPlacesScanned` | number | não | Teto de estabelecimentos analisados (máx. 2000). Padrão `400`. |
 | `includeSocialOnly` | boolean | não | Incluir quem só tem rede social como site. Padrão `true`. |
 | `requirePhone` | boolean | não | Retornar só leads com telefone público. Padrão `false`. |
+| `provider` | `osm` \| `google` | não | Fonte dos dados. Padrão `osm` (grátis). |
 
-Retorna texto formatado **e** `structuredContent` com os leads em JSON. Os leads vêm ordenados por "contactabilidade" (tem telefone, quantidade de avaliações, nota), e comércios permanentemente fechados são descartados. Requer `GOOGLE_MAPS_API_KEY` (ver Configuração).
+Retorna texto formatado **e** `structuredContent` com os leads em JSON. Os leads vêm ordenados por "contactabilidade" (tem telefone, avaliações, nota), comércios desativados são descartados e não há duplicatas.
 
 #### Testando pela linha de comando
 
-Dá pra rodar a prospecção sem subir o servidor MCP:
+Dá pra rodar a prospecção sem subir o servidor MCP e sem gastar nada:
 
 ```sh
 npm run prospect -- --location "Avenida Paulista, São Paulo" --leads 10
-npm run prospect -- --keyword "pet shop" --radius 3000 --leads 15 --csv
+npm run prospect -- --keyword padaria --radius 3000 --leads 15 --csv
 npm run prospect -- --location "Centro, Campinas" --leads 10 --json
 ```
 
-Flags: `--location`, `--keyword`, `--type`, `--radius`, `--leads`, `--scan`, `--csv`, `--json`.
+Flags: `--location`, `--keyword`, `--radius`, `--leads`, `--scan`, `--provider`, `--csv`, `--json`.
+
+> O `--csv` sai pronto pra importar em planilha/CRM.
 
 ## Testes
 
@@ -114,7 +125,7 @@ Flags: `--location`, `--keyword`, `--type`, `--radius`, `--leads`, `--scan`, `--
 npm test
 ```
 
-Cobre a classificação de leads (sem site / site do Google morto / só rede social), os filtros de comércio fechado, deduplicação, ranqueamento e a exportação CSV.
+33 testes cobrindo a classificação de leads (sem site / site do Google morto / só rede social), os filtros de comércio desativado, deduplicação, ranqueamento, exportação CSV, o parser do Overpass, o fallback entre espelhos e o fluxo completo de prospecção.
 
 ### `generate_mockup_image`
 
