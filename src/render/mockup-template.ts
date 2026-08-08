@@ -10,6 +10,11 @@ export interface MockupOptions {
    * vindos da fixture, para nunca confundir mockup de teste com lead real.
    */
   watermark?: boolean;
+  /**
+   * Tema já decidido na etapa de análise. Sempre passe quando vier do pipeline:
+   * garante que HTML, prompt e imagem descrevem exatamente o mesmo tema.
+   */
+  theme?: CategoryTheme;
 }
 
 export function escapeHtml(value: string): string {
@@ -32,7 +37,7 @@ export function suggestDomain(name: string): string {
 }
 
 /** Iniciais usadas no símbolo da marca (no máximo duas letras). */
-function initials(name: string): string {
+export function initials(name: string): string {
   const ignore = new Set(["de", "da", "do", "das", "dos", "e", "&", "-"]);
   const words = name
     .split(/\s+/)
@@ -81,7 +86,7 @@ function isDarkTheme(theme: CategoryTheme): boolean {
  * imagens desenhadas em CSS — o render funciona offline.
  */
 export function buildMockupHtml(lead: BusinessLead, options: MockupOptions = {}): string {
-  const theme = themeForLead(lead);
+  const theme = options.theme ?? themeForLead(lead);
   const p = theme.palette;
   const dark = isDarkTheme(theme);
   const watermark = options.watermark ?? lead.source === "fixture";

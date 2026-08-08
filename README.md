@@ -12,9 +12,23 @@ Pensado para ser conectado como um **connector remoto no ChatGPT**, mas fala o p
 
 ## Como funciona
 
-- `POST /mcp` implementa o transporte Streamable HTTP do MCP, sem estado entre chamadas (cada requisição cria uma sessão nova).
+O produto é uma cadeia de quatro estágios, e o código está organizado nela (`src/pipeline/lead-page.ts`):
+
+```
+LEAD                ANÁLISE              COMPOSIÇÃO            RENDER
+comércio sem   ->   escolhe o tema  ->   HTML + prompt    ->   Chromium
+site                pelo nome/tipo       do mesmo tema         rasteriza
+```
+
+- **Análise** (`analyzeLead`) decide o tema pelo nome do negócio, com os `types` do Places como segunda opção e um tema genérico como fallback. A decisão é auditável: o resultado carrega `matchedBy` e a evidência que a motivou.
+- **Composição** (`composeLeadPage`) produz o HTML **e** o prompt de geração de imagem no mesmo passe, a partir do mesmo objeto de tema. Não são caminhos paralelos que podem divergir: o prompt descreve literalmente a página que o HTML monta.
+- **Render** (`renderLeadPage`) é o único estágio que precisa de navegador. Por isso os anteriores rodam em qualquer ambiente, e o `render_lead_mockup` consegue entregar HTML e prompt mesmo onde não há Chromium.
+
+Sobre o transporte:
+
+- `POST /mcp` implementa o Streamable HTTP do MCP, sem estado entre chamadas (cada requisição cria uma sessão nova).
 - Toda chamada precisa do header `Authorization: Bearer <MCP_SHARED_SECRET>`. Sem isso, o servidor responde `401`.
-- O fluxo pensado é encadeado: `scrape_businesses_without_website` devolve os leads em JSON estruturado (`structuredContent`), e cada lead alimenta uma chamada de `render_lead_mockup` para virar uma imagem de proposta.
+- `scrape_businesses_without_website` devolve os leads em JSON estruturado (`structuredContent`), e cada lead alimenta uma chamada de `render_lead_mockup`, que roda os estágios 2 a 4 e devolve imagem, análise e prompt de uma vez.
 
 ## Configuração
 
@@ -136,7 +150,7 @@ Retorna o texto legível de sempre **e** um `structuredContent` com `leads[]` (n
 
 ### `render_lead_mockup`
 
-Gera a imagem de uma homepage de demonstração para o lead. O tema visual — paleta, textos, ícones — é escolhido pela categoria do negócio (padaria, barbearia, pet shop, ótica, floricultura, doceria, academia, chaveiro, e mais uma dúzia), com fallback genérico.
+Roda os estágios 2 a 4 do pipeline num único call: analisa a categoria, compõe HTML e prompt, e rasteriza a imagem. O tema visual — paleta, textos, ícones — sai da categoria do negócio (padaria, barbearia, pet shop, ótica, floricultura, doceria, academia, chaveiro, e mais uma dúzia), com fallback genérico.
 
 | Campo | Tipo | Obrigatório | Descrição |
 | --- | --- | --- | --- |
@@ -147,9 +161,10 @@ Gera a imagem de uma homepage de demonstração para o lead. O tema visual — p
 | `userRatingsTotal` | number | não | Quantidade de avaliações. |
 | `googleTypes` | string[] | não | Array `types` do Place Details, usado para escolher o tema. |
 | `format` | `png` \| `jpeg` \| `html` | não | Padrão `png`. `html` devolve o código-fonte em vez da imagem. |
+| `includePrompt` | boolean | não | Inclui o prompt de geração de imagem derivado do tema. Padrão `true`. |
 | `watermark` | boolean | não | Carimba a imagem como dado simulado. Padrão `false`. |
 
-Retorna um bloco `image` (base64) mais um bloco de texto com tema, dimensões e tamanho. PNGs acima de ~750 KB são reencodados em JPEG automaticamente, para não estourar o payload da resposta JSON-RPC.
+Retorna três blocos: a `image` em base64, um texto com a análise (tema escolhido, por que foi escolhido, domínio sugerido, dimensões e tempo) e o prompt equivalente. PNGs acima de ~750 KB são reencodados em JPEG automaticamente, para não estourar o payload da resposta JSON-RPC.
 
 O mockup usa **apenas dados reais do lead** — nome, endereço, telefone, avaliação do Google. Não inventa depoimento, ano de fundação nem preço: é uma peça que vai ser mostrada ao dono do negócio, e texto fabricado sobre ele custa credibilidade. O resto do conteúdo é copy genérica da categoria.
 
@@ -171,6 +186,7 @@ src/
   config.ts                 variáveis de ambiente
   server.ts                 express + transporte MCP
   types/lead.ts             BusinessLead, o contrato entre extração e render
+  pipeline/lead-page.ts     os 4 estágios: análise -> composição -> render
   fixtures/                 dados simulados + fetch falso do Google
   render/
     theme.ts                temas por categoria (paleta, copy, ícones)

@@ -497,23 +497,42 @@ const TYPE_ALIASES: Record<string, string> = {
   health: "dentist",
 };
 
-/**
- * Escolhe o tema visual do mockup a partir dos tipos do Google Places.
- * A ótica não tem tipo próprio no Places, então o nome também é considerado.
- */
-export function themeForLead(lead: BusinessLead): CategoryTheme {
-  const byName = themeFromName(lead.name);
-  if (byName) return byName;
+/** Como o tema foi decidido — deixa a etapa de análise auditável. */
+export type ThemeMatchReason = "nome" | "tipo-google" | "padrão";
 
-  const candidates = lead.types ?? [];
-  for (const type of candidates) {
+export interface ThemeMatch {
+  theme: CategoryTheme;
+  matchedBy: ThemeMatchReason;
+  /** O sinal concreto que decidiu: o trecho do nome ou o `type` do Places. */
+  evidence?: string;
+}
+
+/**
+ * Escolhe o tema visual do mockup. O nome do negócio tem prioridade sobre os
+ * tipos do Places, porque o Places é grosseiro: uma ótica e uma farmácia saem
+ * as duas como `store, health`, mas o nome distingue na hora.
+ */
+export function matchTheme(lead: BusinessLead): ThemeMatch {
+  const byName = themeFromName(lead.name);
+  if (byName) {
+    return { theme: byName.theme, matchedBy: "nome", evidence: byName.evidence };
+  }
+
+  for (const type of lead.types ?? []) {
     const key = TYPE_ALIASES[type] ?? type;
     const match = THEMES.find((theme) => theme.key === key);
-    if (match) return match;
+    if (match) return { theme: match, matchedBy: "tipo-google", evidence: type };
   }
 
   const fallbackKey = primaryType(lead);
-  return THEMES.find((theme) => theme.key === fallbackKey) ?? DEFAULT_THEME;
+  const fallback = THEMES.find((theme) => theme.key === fallbackKey);
+  return fallback
+    ? { theme: fallback, matchedBy: "tipo-google", evidence: fallbackKey }
+    : { theme: DEFAULT_THEME, matchedBy: "padrão" };
+}
+
+export function themeForLead(lead: BusinessLead): CategoryTheme {
+  return matchTheme(lead).theme;
 }
 
 const NAME_HINTS: Array<[RegExp, string]> = [
@@ -539,11 +558,12 @@ const NAME_HINTS: Array<[RegExp, string]> = [
   [/cantina|restaurante|rotisseria/i, "restaurant"],
 ];
 
-function themeFromName(name: string): CategoryTheme | undefined {
+function themeFromName(name: string): { theme: CategoryTheme; evidence: string } | undefined {
   for (const [pattern, key] of NAME_HINTS) {
-    if (pattern.test(name)) {
-      return THEMES.find((theme) => theme.key === key);
-    }
+    const hit = pattern.exec(name);
+    if (!hit) continue;
+    const theme = THEMES.find((entry) => entry.key === key);
+    if (theme) return { theme, evidence: hit[0] };
   }
   return undefined;
 }

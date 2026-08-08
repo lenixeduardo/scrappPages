@@ -18,8 +18,8 @@ import {
   FIXTURE_LOCATION,
 } from "../src/fixtures/places-paulista.js";
 import { buildContactSheetHtml, type SheetItem } from "../src/render/contact-sheet.js";
-import { buildLeadImagePrompt, type LeadImagePrompt } from "../src/render/lead-prompt.js";
-import { buildMockupHtml } from "../src/render/mockup-template.js";
+import { renderLeadPage } from "../src/pipeline/lead-page.js";
+import { type LeadImagePrompt } from "../src/render/lead-prompt.js";
 import { RenderSession } from "../src/render/render-png.js";
 import { themeForLead } from "../src/render/theme.js";
 import {
@@ -168,7 +168,7 @@ async function main(): Promise<void> {
   if (args.html) await mkdir(args.htmlDir, { recursive: true });
   if (args.prompts) await mkdir(args.promptsDir, { recursive: true });
 
-  console.log("\n▸ Gerando mockups (HTML + Chromium local)...");
+  console.log("\n▸ Rodando o pipeline por lead (análise → HTML + prompt → render)...");
   const session = await RenderSession.open();
 
   const rows: Array<Record<string, string | number>> = [];
@@ -181,52 +181,49 @@ async function main(): Promise<void> {
   try {
     for (const [position, lead] of extraction.leads.entries()) {
       const index = position + 1;
-      const theme = themeForLead(lead);
-      const baseName = `${String(index).padStart(2, "0")}-${slugify(lead.name)}-${theme.key}`;
-      const fileName = `${baseName}.png`;
-      const started = Date.now();
 
       try {
-        const png = await session.renderLead(lead);
-        if (png.length < MIN_PNG_BYTES) {
-          throw new Error(`PNG suspeito de página em branco (${png.length} bytes)`);
-        }
-        await writeFile(path.join(args.outDir, fileName), png);
+        // Um passe só: análise, HTML, prompt e imagem saem do mesmo tema.
+        const page = await renderLeadPage(lead, session);
+        const { analysis, image } = page;
+        const baseName = `${String(index).padStart(2, "0")}-${slugify(lead.name)}-${analysis.themeKey}`;
 
-        // O HTML que originou o PNG, gravado ao lado dele: é o que se entrega
-        // ao cliente para virar site de verdade, e o que permite auditar de
-        // onde veio cada pixel.
+        if (image.buffer.length < MIN_PNG_BYTES) {
+          throw new Error(`PNG suspeito de página em branco (${image.buffer.length} bytes)`);
+        }
+        await writeFile(path.join(args.outDir, `${baseName}.png`), image.buffer);
+
+        // O HTML que originou o PNG: é o que vira site de verdade quando o
+        // lead fecha, e o que permite auditar de onde veio cada pixel.
         if (args.html) {
-          await writeFile(path.join(args.htmlDir, `${baseName}.html`), buildMockupHtml(lead));
+          await writeFile(path.join(args.htmlDir, `${baseName}.html`), page.html);
         }
 
-        // O prompt orientativo do mesmo mockup, para clientes MCP que geram a
-        // imagem com a capacidade própria em vez de usar o Chromium.
+        // O prompt do MESMO tema, para clientes MCP que geram a imagem com a
+        // capacidade própria em vez de usar o Chromium.
         if (args.prompts) {
-          const built = buildLeadImagePrompt(lead);
-          promptEntries.push({ index, lead, themeLabel: theme.label, ...built });
-          await writeFile(path.join(args.promptsDir, `${baseName}.txt`), `${built.prompt}\n`);
+          promptEntries.push({ index, lead, themeLabel: analysis.themeLabel, ...page.prompt });
+          await writeFile(path.join(args.promptsDir, `${baseName}.txt`), `${page.prompt.prompt}\n`);
         }
 
         sheetItems.push({
           index,
           lead,
-          themeLabel: theme.label,
-          thumb: await session.renderLeadThumb(lead),
+          themeLabel: analysis.themeLabel,
+          thumb: await session.renderLeadThumb(lead, { theme: analysis.theme }),
         });
 
-        const elapsed = Date.now() - started;
         rows.push({
           "#": index,
           negócio: lead.name,
-          tema: theme.key,
-          arquivo: fileName,
-          KB: Math.round(png.length / 1024),
-          ms: elapsed,
+          tema: analysis.themeKey,
+          "decidido por": `${analysis.matchedBy}${analysis.evidence ? `: ${analysis.evidence}` : ""}`,
+          KB: Math.round(image.buffer.length / 1024),
+          ms: page.elapsedMs,
         });
         console.log(
           `  [${String(index).padStart(2, "0")}/${extraction.leads.length}] ${lead.name.padEnd(38)} ` +
-            `${theme.key.padEnd(24)} ${String(Math.round(png.length / 1024)).padStart(4)} KB  ${elapsed}ms`,
+            `${analysis.themeKey.padEnd(24)} ${String(Math.round(image.buffer.length / 1024)).padStart(4)} KB  ${page.elapsedMs}ms`,
         );
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
