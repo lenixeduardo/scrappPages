@@ -1,18 +1,20 @@
 # scrappPages
 
-Servidor MCP (Model Context Protocol) remoto, em Node.js + TypeScript, que expõe duas ferramentas:
+Servidor MCP (Model Context Protocol) remoto, em Node.js + TypeScript, que expõe três ferramentas:
 
-- `generate_mockup_image` — prepara um prompt pronto de mockup de UI (tela web/mobile) a partir de uma descrição em texto.
 - `scrape_businesses_without_website` — busca comércios próximos a um endereço (padrão: Avenida Paulista, São Paulo) e retorna os que não têm site cadastrado no Google, como leads para venda de criação de sites.
+- `render_lead_mockup` — **gera de verdade** a imagem (PNG/JPEG) de uma homepage de demonstração para um desses leads, renderizada localmente com HTML + Chromium.
+- `generate_mockup_image` — prepara um prompt pronto de mockup de UI a partir de uma descrição em texto, para o cliente MCP gerar a imagem com a capacidade nativa dele.
 
-**Sem custo de API de imagem.** O servidor não gera a imagem: ele só monta um prompt bem estruturado e instrui o cliente MCP a gerar a imagem imediatamente usando a própria capacidade de geração de imagem dele (ex: a geração nativa do ChatGPT, coberta pela assinatura). Pensado para ser conectado como um **connector remoto no ChatGPT**, mas fala o protocolo MCP padrão (Streamable HTTP), então funciona com qualquer cliente MCP compatível que tenha geração de imagem própria.
+**Sem custo de API de imagem.** As duas rotas de geração são gratuitas, por caminhos diferentes: `render_lead_mockup` rasteriza um template HTML no Chromium local (determinístico, sempre o mesmo resultado para o mesmo lead), e `generate_mockup_image` delega a geração ao cliente MCP (ex: a geração nativa do ChatGPT, coberta pela assinatura). Nenhuma chave de API de imagem é necessária.
+
+Pensado para ser conectado como um **connector remoto no ChatGPT**, mas fala o protocolo MCP padrão (Streamable HTTP), então funciona com qualquer cliente MCP compatível.
 
 ## Como funciona
 
 - `POST /mcp` implementa o transporte Streamable HTTP do MCP, sem estado entre chamadas (cada requisição cria uma sessão nova).
 - Toda chamada precisa do header `Authorization: Bearer <MCP_SHARED_SECRET>`. Sem isso, o servidor responde `401`.
-- A ferramenta `generate_mockup_image` recebe uma descrição da tela, plataforma alvo, notas de estilo e proporção, monta um prompt e devolve como texto, junto com uma instrução diretiva pedindo para o cliente gerar a imagem na hora, sem confirmação extra.
-- Quem gera os pixels de fato é o cliente MCP (ChatGPT), não este servidor — por isso não há chave de API de imagem nem cobrança por chamada aqui.
+- O fluxo pensado é encadeado: `scrape_businesses_without_website` devolve os leads em JSON estruturado (`structuredContent`), e cada lead alimenta uma chamada de `render_lead_mockup` para virar uma imagem de proposta.
 
 ## Configuração
 
@@ -24,9 +26,10 @@ Preencha no `.env`:
 
 | Variável | Descrição |
 | --- | --- |
-| `MCP_SHARED_SECRET` | Segredo que o cliente MCP deve enviar em todo request. Gere com `openssl rand -hex 32`. |
+| `MCP_SHARED_SECRET` | Segredo que o cliente MCP deve enviar em todo request. Gere com `openssl rand -hex 32`. Obrigatório: o servidor não sobe sem ele. |
 | `PORT` / `HOST` | Opcional. Padrão `3000` / `0.0.0.0`. |
 | `GOOGLE_MAPS_API_KEY` | Necessária apenas para `scrape_businesses_without_website`. Chave da Google Cloud com **Places API** e **Geocoding API** habilitadas (e billing ativo — o Google exige cartão, mas dá cota gratuita mensal). |
+| `CHROMIUM_EXECUTABLE_PATH` | Opcional. Caminho de um Chromium específico para o `render_lead_mockup`. Se vazio, o `playwright-core` resolve sozinho (respeitando `PLAYWRIGHT_BROWSERS_PATH`). |
 
 ## Rodando localmente
 
@@ -44,6 +47,41 @@ npm start
 
 Verifique se subiu com `curl http://localhost:3000/health`.
 
+Para gerar imagens localmente é preciso ter o Chromium do Playwright instalado uma vez:
+
+```sh
+npx playwright install chromium
+```
+
+## Teste de fluxo completo
+
+O script `scripts/test-fluxo-completo.ts` roda a cadeia inteira — extração de leads → geração das imagens — e grava tudo em `out/mockups/`.
+
+```sh
+npm run fluxo:teste           # dados simulados, não precisa de chave nenhuma
+npm run fluxo:teste:real      # extração real via Google Places API
+```
+
+Saída: um PNG 1280x800 por lead, mais `00-indice.png`, uma folha de contato com todas as miniaturas numa página só para validar as gerações de uma olhada. No fim, uma tabela com tema escolhido, tamanho e tempo de cada mockup; o script sai com código 1 se algum render falhar ou se vierem menos de 20 leads.
+
+Amostras versionadas ficam em [`docs/exemplos/`](docs/exemplos/).
+
+Flags úteis: `--limit=24` (quantos estabelecimentos analisar), `--out=caminho`, `--samples=6`.
+
+### Dados simulados
+
+Sem `GOOGLE_MAPS_API_KEY`, o script usa a fixture de `src/fixtures/places-paulista.ts`: 24 estabelecimentos **fictícios** da região da Paulista, dos quais 4 têm site (para o filtro ter o que descartar) e 20 viram leads.
+
+A fixture não é um atalho que pula a extração: ela injeta um `fetch` falso que responde aos três endpoints do Google, **inclusive a paginação por `next_page_token`**. Os dois modos passam pelo mesmo `extractLeadsWithoutWebsite`.
+
+Três marcadores impedem confundir simulação com dado real:
+
+1. todo `place_id` começa com `FIXTURE_` (o real do Google começa com `ChIJ`);
+2. todo telefone está na faixa fictícia `(11) 5555-0xxx`;
+3. todo lead sai com `source: "fixture"`, e as imagens saem carimbadas com `MOCKUP · DADOS SIMULADOS`.
+
+O script também imprime um banner vermelho em toda execução simulada. **Não use a fixture para prospecção.**
+
 ## Deploy no Render (free tier)
 
 O repo já tem um `render.yaml` (Blueprint) pronto. Passos:
@@ -54,7 +92,9 @@ O repo já tem um `render.yaml` (Blueprint) pronto. Passos:
 4. Deploy. Ao terminar, o Render te dá uma URL tipo `https://scrapppages.onrender.com`.
 5. Confirme que subiu: `curl https://scrapppages.onrender.com/health` → `{"status":"ok"}`.
 
-**Sobre o free tier:** o serviço dorme após ~15 min sem receber requisição e leva uns 30-50s pra acordar na próxima chamada — normal e sem custo, só afeta a latência da primeira geração de mockup depois de um tempo parado.
+**Sobre o free tier:** o serviço dorme após ~15 min sem receber requisição e leva uns 30-50s pra acordar na próxima chamada — normal e sem custo, só afeta a latência da primeira chamada depois de um tempo parado.
+
+**O free tier não rasteriza imagem.** A dependência instalada é o `playwright-core` (8 MB, não baixa navegador nenhum), então o build passa normalmente — mas o binário do Chromium não existe lá, e os 512 MB de RAM do plano não comportariam um Chromium headless de qualquer forma. Nesse ambiente o `render_lead_mockup` **degrada**: em vez de erro, devolve o HTML completo do mockup, que abre em qualquer navegador. Para PNG em produção é preciso uma instância paga com Chromium instalado, ou um worker de render separado. Os outros dois tools funcionam igual no free tier.
 
 ## Expondo para o ChatGPT
 
@@ -63,13 +103,11 @@ O ChatGPT (via Developer Mode / Connectors) só alcança servidores MCP remotos 
 - **URL do servidor:** `https://scrapppages.onrender.com/mcp` (a URL que o Render te deu, com `/mcp` no final).
 - **Autenticação:** o mesmo valor de `MCP_SHARED_SECRET` como Bearer token (o ChatGPT permite configurar um header/token fixo por connector).
 
-A automação de ponta a ponta (usuário pede → ChatGPT chama a ferramenta → ChatGPT gera a imagem sozinho) depende do modelo seguir a instrução devolvida pela ferramenta. Isso não é garantido pelo protocolo MCP (que só permite cliente→servidor, sem o servidor "acionar" a geração do cliente), mas modelos GPT-4/5-class costumam encadear a chamada de geração de imagem de forma consistente logo após receber o prompt pronto.
-
 ## Ferramentas expostas
 
 ### `scrape_businesses_without_website`
 
-Usa a [Google Places API](https://developers.google.com/maps/documentation/places/web-service) (Nearby Search + Place Details) e a Geocoding API para localizar comércios físicos próximos a um endereço e filtrar apenas os que **não têm site cadastrado no Google** — úteis como leads para oferecer criação de site.
+Usa a [Google Places API](https://developers.google.com/maps/documentation/places/web-service) (Nearby Search + Place Details) e a Geocoding API para localizar comércios físicos próximos a um endereço e filtrar apenas os que **não têm site cadastrado no Google**.
 
 | Campo | Tipo | Obrigatório | Descrição |
 | --- | --- | --- | --- |
@@ -79,7 +117,26 @@ Usa a [Google Places API](https://developers.google.com/maps/documentation/place
 | `keyword` | string | não | Palavra-chave adicional (ex: `padaria`, `pet shop`). |
 | `maxResults` | number | não | Máximo de estabelecimentos analisados (máx. 60). Padrão `20`. |
 
-Retorna a lista de comércios sem site, com nome, endereço, telefone, avaliação e link do Google Maps. Requer `GOOGLE_MAPS_API_KEY` configurada (ver seção de Configuração acima).
+Retorna o texto legível de sempre **e** um `structuredContent` com `leads[]` (nome, endereço, telefone, avaliação, link do Maps, tipos) mais a contagem de analisados, descartados por já terem site e sem detalhe disponível. Requer `GOOGLE_MAPS_API_KEY`.
+
+### `render_lead_mockup`
+
+Gera a imagem de uma homepage de demonstração para o lead. O tema visual — paleta, textos, ícones — é escolhido pela categoria do negócio (padaria, barbearia, pet shop, ótica, floricultura, doceria, academia, chaveiro, e mais uma dúzia), com fallback genérico.
+
+| Campo | Tipo | Obrigatório | Descrição |
+| --- | --- | --- | --- |
+| `businessName` | string | sim | Nome do estabelecimento. |
+| `address` | string | não | Endereço completo. |
+| `phone` | string | não | Telefone de contato. |
+| `rating` | number | não | Nota do Google, de 0 a 5. |
+| `userRatingsTotal` | number | não | Quantidade de avaliações. |
+| `googleTypes` | string[] | não | Array `types` do Place Details, usado para escolher o tema. |
+| `format` | `png` \| `jpeg` \| `html` | não | Padrão `png`. `html` devolve o código-fonte em vez da imagem. |
+| `watermark` | boolean | não | Carimba a imagem como dado simulado. Padrão `false`. |
+
+Retorna um bloco `image` (base64) mais um bloco de texto com tema, dimensões e tamanho. PNGs acima de ~750 KB são reencodados em JPEG automaticamente, para não estourar o payload da resposta JSON-RPC.
+
+O mockup usa **apenas dados reais do lead** — nome, endereço, telefone, avaliação do Google. Não inventa depoimento, ano de fundação nem preço: é uma peça que vai ser mostrada ao dono do negócio, e texto fabricado sobre ele custa credibilidade. O resto do conteúdo é copy genérica da categoria.
 
 ### `generate_mockup_image`
 
@@ -88,6 +145,25 @@ Retorna a lista de comércios sem site, com nome, endereço, telefone, avaliaç�
 | `description` | string | sim | O que a tela/componente deve mostrar. |
 | `platform` | `web` \| `mobile` \| `desktop` \| `tablet` | não | Plataforma alvo (padrão `web`). |
 | `styleNotes` | string | não | Paleta, tipografia, tom visual, referências de marca. |
-| `aspectRatio` | `square` \| `landscape` \| `portrait` | não | Proporção sugerida para a imagem (padrão `landscape`). |
+| `aspectRatio` | `square` \| `landscape` \| `portrait` | não | Proporção sugerida (padrão `landscape`). |
 
-Retorna um texto com o prompt final pronto e a instrução para o cliente gerar a imagem imediatamente.
+Retorna um texto com o prompt final pronto e a instrução para o cliente gerar a imagem imediatamente. Diferente do `render_lead_mockup`, este tool não produz pixels — quem gera é o cliente MCP.
+
+## Estrutura
+
+```
+src/
+  config.ts                 variáveis de ambiente
+  server.ts                 express + transporte MCP
+  types/lead.ts             BusinessLead, o contrato entre extração e render
+  fixtures/                 dados simulados + fetch falso do Google
+  render/
+    theme.ts                temas por categoria (paleta, copy, ícones)
+    mockup-template.ts      HTML autocontido do mockup
+    render-png.ts           Chromium via playwright-core
+    contact-sheet.ts        folha de contato com todas as miniaturas
+  tools/                    os três tools MCP
+scripts/
+  test-fluxo-completo.ts    extração -> imagens, ponta a ponta
+docs/exemplos/              amostras versionadas
+```

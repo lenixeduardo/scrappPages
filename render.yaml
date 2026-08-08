@@ -12,3 +12,8 @@ services:
         value: 0.0.0.0
       - key: MCP_SHARED_SECRET
         sync: false
+      # Defensivo: só o playwright-core é instalado (8 MB, não baixa navegador).
+      # Se algum dia trocarem para o pacote 'playwright' completo, esta linha
+      # evita o download de ~400 MB de browsers no build do free tier.
+      - key: PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD
+        value: "1"

@@ -3,9 +3,13 @@ import { createMcpExpressApp } from "@modelcontextprotocol/sdk/server/express.js
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 
-import { config } from "./config.js";
+import { config, requireMcpSharedSecret } from "./config.js";
 import { registerGenerateMockupImageTool } from "./tools/generate-mockup-image.js";
+import { registerRenderLeadMockupTool } from "./tools/render-lead-mockup.js";
 import { registerScrapeBusinessesWithoutWebsiteTool } from "./tools/scrape-businesses-without-website.js";
+
+// Falha no boot, não na primeira request, se o segredo não estiver configurado.
+const sharedSecret = requireMcpSharedSecret();
 
 function buildMcpServer(): McpServer {
   const server = new McpServer({
@@ -15,6 +19,7 @@ function buildMcpServer(): McpServer {
 
   registerGenerateMockupImageTool(server);
   registerScrapeBusinessesWithoutWebsiteTool(server);
+  registerRenderLeadMockupTool(server);
 
   return server;
 }
@@ -23,7 +28,7 @@ function requireSharedSecret(req: Request, res: Response, next: NextFunction): v
   const header = req.header("authorization") ?? "";
   const token = header.startsWith("Bearer ") ? header.slice("Bearer ".length) : header;
 
-  if (token !== config.mcpSharedSecret) {
+  if (token !== sharedSecret) {
     res.status(401).json({
       jsonrpc: "2.0",
       error: { code: -32001, message: "Não autorizado. Envie Authorization: Bearer <chave>." },

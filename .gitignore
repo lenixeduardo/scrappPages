@@ -2,3 +2,8 @@ node_modules/
 dist/
 .env
 *.log
+
+# Saída completa do teste de fluxo (os 20 mockups + índice).
+# As amostras versionadas ficam em docs/exemplos/.
+out/
+.tmp-preview/

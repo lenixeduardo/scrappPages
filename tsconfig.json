@@ -3,7 +3,9 @@
     "target": "ES2022",
     "module": "NodeNext",
     "moduleResolution": "NodeNext",
-    "lib": ["ES2022"],
+    // DOM entra por causa dos callbacks de `page.evaluate`, que rodam dentro do
+    // Chromium e enxergam `document`, não o escopo do Node.
+    "lib": ["ES2022", "DOM"],
     "outDir": "dist",
     "rootDir": "src",
     "strict": true,
