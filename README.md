@@ -86,8 +86,22 @@ Retorna a lista de comércios sem site, com nome, endereço, telefone, avaliaç�
 | Campo | Tipo | Obrigatório | Descrição |
 | --- | --- | --- | --- |
 | `description` | string | sim | O que a tela/componente deve mostrar. |
-| `platform` | `web` \| `mobile` \| `desktop` \| `tablet` | não | Plataforma alvo (padrão `web`). |
-| `styleNotes` | string | não | Paleta, tipografia, tom visual, referências de marca. |
+| `platform` | `web` \| `mobile` \| `desktop` \| `tablet` \| `responsive` | não | Plataforma alvo (padrão `web`). `responsive` gera mobile + desktop do mesmo site na mesma imagem. |
+| `styleNotes` | string | não | Paleta, tipografia, tom visual, referências de marca. Se omitido, usa a estética padrão de site de pequeno negócio brasileiro. |
 | `aspectRatio` | `square` \| `landscape` \| `portrait` | não | Proporção sugerida para a imagem (padrão `landscape`). |
+| `views` | `auto` \| `single` \| `mobile-and-desktop` | não | Quantas telas mostrar. Padrão `auto`: duas telas quando `platform = responsive`, uma só nos demais casos. |
 
 Retorna um texto com o prompt final pronto e a instrução para o cliente gerar a imagem imediatamente.
+
+#### Regras obrigatórias embutidas no prompt
+
+O prompt montado não é só a descrição do usuário — ele já carrega as regras de layout que evitam os erros mais comuns de mockup gerado por IA:
+
+- **Fluxo vertical de seções.** `HEADER → HERO → SEÇÃO 02 → SEÇÃO 03 → CTA/CONTATO → RODAPÉ`, cada seção ocupando a sua própria linha horizontal em largura total. Colunas só existem **dentro** de uma seção, nunca entre seções.
+- **Proibição explícita do Hero lado a lado com a Seção 02.** Nada de Hero ocupando ~50% da largura com a próxima seção no outro lado, nem de conteúdo da Seção 02 preenchendo espaço vazio ao lado do Hero.
+- **Estrutura do Hero.** O Hero ocupa 100% da largura como uma seção única; internamente usa duas colunas (texto/CTA/avaliação em 42-48% à esquerda, visual/informações do negócio em 52-58% à direita). A coluna direita é parte do Hero, não outra seção.
+- **Transição de seção.** Quebra horizontal inequívoca entre Hero e Seção 02: novo espaçamento vertical, kicker/título próprio, container próprio e, opcionalmente, divisor ou mudança de fundo.
+- **Ritmo visual.** Proíbe o padrão repetitivo `[ícone + título + descrição] × 3` e duas seções seguidas com três cards iguais; sugere composições editoriais/lista (ex: `SERVIÇO — DETALHES — PREÇO`) para a Seção 02.
+- **Consistência responsiva** (quando há duas telas). Mesma marca, cores, tipografia, copy, ícones, botões e raio de borda nas duas; muda só grid, largura, navegação, escala tipográfica, espaçamento, empilhamento e densidade. No mobile, a ordem é `HEADER → TÍTULO → DESCRIÇÃO → CTA PRIMÁRIO → CTA SECUNDÁRIO → AVALIAÇÃO → VISUAL → INFORMAÇÕES DO NEGÓCIO → SEÇÃO 02 → …`, com a Seção 02 começando só depois que todo o conteúdo do Hero termina.
+
+As regras de Hero são omitidas quando `platform = mobile` (tela única de celular), já que não há composição em duas colunas nesse caso.
